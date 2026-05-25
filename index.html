@@ -3516,6 +3516,8 @@
         <p data-i18n="tableSubtitle">Gérez vos tâches avec édition inline avancée</p>
       </div>
       <div class="table-filters">
+        <button class="btn-secondary btn-sm" onclick="expandAllSubtasks()" title="Tout déplier">⊞</button>
+        <button class="btn-secondary btn-sm" onclick="collapseAllSubtasks()" title="Tout replier">⊟</button>
         <input type="text" id="table-search" placeholder="Rechercher une tâche..." data-i18n-placeholder="taskSearchPlaceholder" oninput="renderTableView()" />
         <select id="filter-status" onchange="renderTableView()">
           <option value="" data-i18n="allStatuses">Tous les statuts</option>
@@ -3542,7 +3544,7 @@
       <div class="gantt-controls">
         <button class="btn-secondary btn-sm" onclick="ganttNav(-1)">◀</button>
         <span data-i18n="ganttYear">Année :</span>
-        <select id="gantt-year" onchange="renderGanttView()"></select>
+        <select id="gantt-year" onchange="setGanttYear(this.value)"></select>
         <button class="gantt-today btn-sm" onclick="ganttToday()" data-i18n="ganttToday">Aujourd'hui</button>
         <button class="btn-secondary btn-sm" onclick="ganttNav(1)">▶</button>
         <div style="flex:1;"></div>
@@ -3846,7 +3848,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=40"></script>
+  <script src="widget.js?v=41"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

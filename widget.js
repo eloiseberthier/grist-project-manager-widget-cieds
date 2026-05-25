@@ -2892,9 +2892,10 @@ function ganttSubtaskBarClass(st, parentTask) {
 
 // Bornes de la sous-tâche : début = Start_Date du parent (ou Due_Date subtask en fallback)
 function getGanttSubtaskRange(st, parentTask) {
-  var stEnd = new Date(st.Due_Date * 1000);
-  var stStart = parentTask.Start_Date ? new Date(parentTask.Start_Date * 1000) : new Date(st.Due_Date * 1000);
-  if (stStart > stEnd) stStart = new Date(st.Due_Date * 1000);
+  var stEnd = st.Due_Date ? new Date(st.Due_Date * 1000) : (parentTask.Due_Date ? new Date(parentTask.Due_Date * 1000) : null);
+  var stStart = st.Start_Date ? new Date(st.Start_Date * 1000) : (stEnd ? new Date(stEnd) : null);
+  if (!stEnd) return { start: new Date(), end: new Date() };
+  if (stStart > stEnd) stStart = new Date(stEnd);
   stStart.setHours(0, 0, 0, 0);
   stEnd.setHours(23, 59, 59, 999);
   return { start: stStart, end: stEnd };
@@ -2918,13 +2919,11 @@ function renderGanttView() {
       var opt = document.createElement('option');
       opt.value = y;
       opt.textContent = y;
-      if (y === ganttYear) opt.selected = true;
       yearSelect.appendChild(opt);
     }
-  } else {
-    // Update ganttYear from select value when user changes it
-    ganttYear = parseInt(yearSelect.value);
   }
+  // Always sync select TO ganttYear (never overwrite ganttYear from select)
+  yearSelect.value = ganttYear;
 
   document.querySelectorAll('[data-gantt-mode]').forEach(function(btn) {
     btn.classList.toggle('active', btn.getAttribute('data-gantt-mode') === ganttMode);
@@ -3094,18 +3093,24 @@ function renderGanttView() {
       if (task.Due_Date) html += ' ⏰ ' + (currentLang === 'fr' ? 'Échéance: ' : 'Due: ') + formatDate(task.Due_Date);
       html += '</div></td>';
 
+      var mTStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
+      var mTEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
+      if (!mTStart && mTEnd) mTStart = new Date(mTEnd);
+      if (!mTEnd && mTStart) mTEnd = new Date(mTStart);
+      if (mTStart) mTStart.setHours(0, 0, 0, 0);
+      if (mTEnd) mTEnd.setHours(23, 59, 59, 999);
+
       for (var m = 0; m < 12; m++) {
         var monthStart = new Date(ganttYear, m, 1);
-        var monthEnd = new Date(ganttYear, m + 1, 0);
-        var tStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
-        var tEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
-        if (!tStart && tEnd) tStart = tEnd;
-        if (!tEnd && tStart) tEnd = tStart;
+        var monthEnd = new Date(ganttYear, m + 1, 0, 23, 59, 59, 999);
+        var daysInMonth = new Date(ganttYear, m + 1, 0).getDate();
 
-        var inRange = tStart && tEnd && tStart <= monthEnd && tEnd >= monthStart;
+        var inRange = mTStart && mTEnd && mTStart <= monthEnd && mTEnd >= monthStart;
         html += '<td class="gantt-cell" style="position:relative;">';
         if (inRange) {
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;right:2px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title).substring(0, 10) + '</div>';
+          var barLeft = mTStart > monthStart ? Math.round((mTStart.getDate() - 1) / daysInMonth * 100) : 0;
+          var barRight = mTEnd < monthEnd ? Math.round((daysInMonth - mTEnd.getDate()) / daysInMonth * 100) : 0;
+          html += '<div class="gantt-bar ' + barClass + '" style="left:' + barLeft + '%;right:' + barRight + '%;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + (barLeft === 0 && barRight === 0 ? sanitize(task.Title).substring(0, 10) : '') + '</div>';
         }
         html += '</td>';
       }
@@ -3121,11 +3126,14 @@ function renderGanttView() {
           html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
           for (var m2 = 0; m2 < 12; m2++) {
             var mStart = new Date(ganttYear, m2, 1);
-            var mEnd = new Date(ganttYear, m2 + 1, 0);
+            var mEnd = new Date(ganttYear, m2 + 1, 0, 23, 59, 59, 999);
+            var mDays = new Date(ganttYear, m2 + 1, 0).getDate();
             var stInRange = stRange.start <= mEnd && stRange.end >= mStart;
             html += '<td class="gantt-cell" style="position:relative;">';
             if (stInRange) {
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;right:2px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title).substring(0, 10) + '</div>';
+              var stL = stRange.start > mStart ? Math.round((stRange.start.getDate() - 1) / mDays * 100) : 0;
+              var stR = stRange.end < mEnd ? Math.round((mDays - stRange.end.getDate()) / mDays * 100) : 0;
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:' + stL + '%;right:' + stR + '%;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
             }
             html += '</td>';
           }
@@ -3260,6 +3268,11 @@ function renderGanttView() {
   html += '</div></div>';
 
   document.getElementById('gantt-view').innerHTML = html;
+}
+
+function setGanttYear(value) {
+  ganttYear = Math.max(2020, Math.min(2050, parseInt(value)));
+  renderGanttView();
 }
 
 function ganttNav(dir) {
@@ -3543,29 +3556,22 @@ async function deleteCategory(categoryId) {
 }
 
 async function getRoleChoicesFromGrist() {
-  // Default roles + roles already used
   var roleSet = {};
-  ['admin', 'member', 'viewer'].forEach(function(r) { roleSet[r] = true; });
-  users.forEach(function(u) { getUserRoles(u).forEach(function(r) { if (r) roleSet[r] = true; }); });
+  var hasGristChoices = false;
 
-  // Try to get choices defined in Grist column metadata
+  // Try to get choices defined in Grist column metadata (source of truth)
   try {
     var roleColName = getColumnName('users', 'role');
     var tablesData = await grist.docApi.fetchTable('_grist_Tables');
     var columnsData = await grist.docApi.fetchTable('_grist_Tables_column');
 
-    // Find the table id for USERS_TABLE
     var tableRowId = null;
     if (tablesData && tablesData.id && tablesData.tableId) {
       for (var i = 0; i < tablesData.id.length; i++) {
-        if (tablesData.tableId[i] === USERS_TABLE) {
-          tableRowId = tablesData.id[i];
-          break;
-        }
+        if (tablesData.tableId[i] === USERS_TABLE) { tableRowId = tablesData.id[i]; break; }
       }
     }
 
-    // Find the Role column in that table and parse its widgetOptions
     if (tableRowId !== null && columnsData && columnsData.id) {
       for (var j = 0; j < columnsData.id.length; j++) {
         if (columnsData.parentId[j] === tableRowId && columnsData.colId[j] === roleColName) {
@@ -3573,8 +3579,9 @@ async function getRoleChoicesFromGrist() {
           if (wo) {
             try {
               var opts = JSON.parse(wo);
-              if (opts.choices && Array.isArray(opts.choices)) {
+              if (opts.choices && Array.isArray(opts.choices) && opts.choices.length > 0) {
                 opts.choices.forEach(function(c) { roleSet[c] = true; });
+                hasGristChoices = true;
               }
             } catch (e) { /* ignore parse errors */ }
           }
@@ -3585,6 +3592,14 @@ async function getRoleChoicesFromGrist() {
   } catch (e) {
     console.log('Could not fetch role choices from Grist metadata:', e);
   }
+
+  // Add defaults only if no choices are defined yet (first-time setup)
+  if (!hasGristChoices) {
+    ['admin', 'member', 'viewer'].forEach(function(r) { roleSet[r] = true; });
+  }
+
+  // Always include roles currently assigned to users (so no user is orphaned)
+  users.forEach(function(u) { getUserRoles(u).forEach(function(r) { if (r) roleSet[r] = true; }); });
 
   return Object.keys(roleSet).sort();
 }
@@ -5614,22 +5629,25 @@ function renderStatsView() {
   }
   document.getElementById('chart-assignee').innerHTML = assigneeHtml;
 
-  // Week chart (tasks due this week by day)
+  // Week chart (tasks active or due this week by day)
   var weekDays = currentLang === 'fr' ? ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   var now = new Date();
   var dayOfWeek = now.getDay();
   var mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   var weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
-  
+
   var weekCounts = [0, 0, 0, 0, 0, 0, 0];
   filteredTasks.forEach(function(task) {
-    if (task.Due_Date) {
-      var dueDate = new Date(task.Due_Date * 1000);
-      for (var d = 0; d < 7; d++) {
-        var dayDate = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + d);
-        if (dueDate.toDateString() === dayDate.toDateString()) {
-          weekCounts[d]++;
-        }
+    var tStart = task.Start_Date ? task.Start_Date : (task.Due_Date || null);
+    var tEnd = task.Due_Date ? task.Due_Date : (task.Start_Date || null);
+    if (!tEnd) return;
+    for (var d = 0; d < 7; d++) {
+      var dayStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + d);
+      var dayEnd = new Date(dayStart); dayEnd.setHours(23, 59, 59, 999);
+      var dsTs = Math.floor(dayStart.getTime() / 1000);
+      var deTs = Math.floor(dayEnd.getTime() / 1000);
+      if (tStart <= deTs && tEnd >= dsTs) {
+        weekCounts[d]++;
       }
     }
   });
@@ -5777,24 +5795,30 @@ function renderTimelineChart() {
 
   var now = new Date(); now.setHours(0, 0, 0, 0);
   var slots = [];
+  var tlMn = currentLang === 'fr'
+    ? ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+    : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   if (period === 'weeks') {
-    for (var w = 0; w < 8; w++) {
-      var start = new Date(now); start.setDate(start.getDate() - start.getDay() + 1 + w * 7);
-      var end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23, 59, 59);
-      slots.push({ label: start.getDate() + '/' + (start.getMonth() + 1), start: Math.floor(start.getTime() / 1000), end: Math.floor(end.getTime() / 1000) });
+    // Show 4 past weeks + current + 3 future = 8 weeks
+    var dayOfW = now.getDay();
+    var offToMon = dayOfW === 0 ? -6 : 1 - dayOfW;
+    var thisMon = new Date(now); thisMon.setDate(thisMon.getDate() + offToMon);
+    for (var w = -4; w < 4; w++) {
+      var wStart = new Date(thisMon); wStart.setDate(thisMon.getDate() + w * 7);
+      var wEnd = new Date(wStart); wEnd.setDate(wStart.getDate() + 6); wEnd.setHours(23, 59, 59, 999);
+      var isCurrentW = w === 0;
+      slots.push({ label: wStart.getDate() + '/' + (wStart.getMonth() + 1), start: Math.floor(wStart.getTime() / 1000), end: Math.floor(wEnd.getTime() / 1000), current: isCurrentW });
     }
   } else {
-    for (var m = 0; m < 6; m++) {
+    // Show 3 past months + current + 2 future = 6 months
+    for (var m = -3; m < 3; m++) {
       var d = new Date(now.getFullYear(), now.getMonth() + m, 1);
-      var dEnd = new Date(now.getFullYear(), now.getMonth() + m + 1, 0, 23, 59, 59);
-      var monthNames = currentLang === 'fr'
-        ? ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
-        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      slots.push({ label: monthNames[d.getMonth()], start: Math.floor(d.getTime() / 1000), end: Math.floor(dEnd.getTime() / 1000) });
+      var dEnd = new Date(now.getFullYear(), now.getMonth() + m + 1, 0, 23, 59, 59, 999);
+      slots.push({ label: tlMn[d.getMonth()], start: Math.floor(d.getTime() / 1000), end: Math.floor(dEnd.getTime() / 1000), current: m === 0 });
     }
   }
 
-  // Collect tasks per slot per agent
+  // Collect tasks per slot per agent (overlap-based: task active during slot)
   var agentColors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
   var allAgents = [];
   var filteredTasks = getFilteredTasks().filter(function(t) { return t.Status !== 'done'; });
@@ -5810,12 +5834,15 @@ function renderTimelineChart() {
 
   var visibleAgents = agentFilter ? [agentFilter] : allAgents;
 
-  // Build data[slot][agent] = count
+  // Build data[slot][agent] = count (task active = overlaps slot)
   var data = slots.map(function(slot) {
-    var row = { label: slot.label, total: 0 };
+    var row = { label: slot.label, total: 0, current: slot.current };
     visibleAgents.forEach(function(agent) { row[agent] = 0; });
     filteredTasks.forEach(function(t) {
-      if (!t.Due_Date || t.Due_Date < slot.start || t.Due_Date > slot.end) return;
+      var tS = t.Start_Date ? t.Start_Date : (t.Due_Date || null);
+      var tE = t.Due_Date ? t.Due_Date : (t.Start_Date || null);
+      if (!tE) return;
+      if (tS > slot.end || tE < slot.start) return; // no overlap
       if (!t.Assignee) return;
       t.Assignee.split(',').forEach(function(a) {
         var name = getUserDisplayName(a.trim());
@@ -5833,8 +5860,9 @@ function renderTimelineChart() {
 
   var html = '<div style="display:flex;gap:4px;align-items:flex-end;min-height:' + (BAR_H + 50) + 'px;">';
   data.forEach(function(slot) {
-    html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">';
-    html += '<span style="font-size:10px;color:#64748b;font-weight:600;">' + (slot.total || '') + '</span>';
+    var colStyle = slot.current ? 'flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:#eff6ff;border-radius:6px;padding:2px;' : 'flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;';
+    html += '<div style="' + colStyle + '">';
+    html += '<span style="font-size:10px;color:' + (slot.current ? '#2563eb' : '#64748b') + ';font-weight:' + (slot.current ? '700' : '600') + ';">' + (slot.total || '') + '</span>';
     html += '<div style="width:100%;display:flex;flex-direction:column-reverse;gap:1px;">';
     var stackH = 0;
     visibleAgents.forEach(function(agent, idx) {
@@ -5849,7 +5877,7 @@ function renderTimelineChart() {
       html += '<div style="height:4px;background:#e2e8f0;border-radius:2px;"></div>';
     }
     html += '</div>';
-    html += '<span style="font-size:10px;color:#94a3b8;margin-top:4px;">' + slot.label + '</span>';
+    html += '<span style="font-size:10px;color:' + (slot.current ? '#2563eb' : '#94a3b8') + ';margin-top:4px;font-weight:' + (slot.current ? '700' : 'normal') + ';">' + slot.label + '</span>';
     html += '</div>';
   });
   html += '</div>';
