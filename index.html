@@ -3506,6 +3506,14 @@
 
     <!-- TAB: KANBAN -->
     <div class="tab-content" id="tab-kanban">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0 4px 0;">
+        <span style="font-size:13px;color:#64748b;">Grouper par :</span>
+        <select id="kanban-groupby" onchange="setKanbanGroupBy(this.value)" style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;">
+          <option value="status">Statut</option>
+          <option value="priority">Priorité</option>
+          <option value="project">Projet</option>
+        </select>
+      </div>
       <div class="kanban-board" id="kanban-board"></div>
     </div>
 
@@ -3848,7 +3856,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=41"></script>
+  <script src="widget.js?v=42"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

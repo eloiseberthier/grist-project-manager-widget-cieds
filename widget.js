@@ -598,6 +598,7 @@ var currentFilterAssignee = null; // user Name
 var currentFilterCategory = null;
 var currentFilterTag = null;
 var activeTimers = {}; // taskId -> startTime (for running timers)
+var kanbanGroupBy = 'status'; // 'status' | 'priority' | 'project'
 var ganttMode = 'days';
 var ganttYear = new Date().getFullYear();
 var ganttMonth = new Date().getMonth();
@@ -1336,6 +1337,12 @@ async function ensureTables() {
         if (stCols.indexOf('Estimated_Hours') === -1) {
           stActions.push(['AddColumn', SUBTASKS_TABLE, 'Estimated_Hours', { type: 'Numeric' }]);
         }
+        if (stCols.indexOf('Recurrence') === -1) {
+          stActions.push(['AddColumn', SUBTASKS_TABLE, 'Recurrence', { type: 'Choice', widgetOptions: JSON.stringify({ choices: ['none', 'daily', 'weekly', 'monthly'] }) }]);
+        }
+        if (stCols.indexOf('Start_Date') === -1) {
+          stActions.push(['AddColumn', SUBTASKS_TABLE, 'Start_Date', { type: 'Date' }]);
+        }
         if (stActions.length > 0) {
           await grist.docApi.applyUserActions(stActions);
         }
@@ -1481,7 +1488,9 @@ async function loadAllData() {
           Blocked_By_Subtask_Id: subtaskData.Blocked_By_Subtask_Id ? subtaskData.Blocked_By_Subtask_Id[i] : null,
           Assignee: subtaskData.Assignee ? subtaskData.Assignee[i] : '',
           Due_Date: subtaskData.Due_Date ? subtaskData.Due_Date[i] : null,
+          Start_Date: subtaskData.Start_Date ? subtaskData.Start_Date[i] : null,
           Estimated_Hours: subtaskData.Estimated_Hours ? subtaskData.Estimated_Hours[i] : null,
+          Recurrence: subtaskData.Recurrence ? subtaskData.Recurrence[i] : 'none',
           Created_At: subtaskData.Created_At ? subtaskData.Created_At[i] : null
         });
       }
@@ -2523,26 +2532,59 @@ function openNewTaskForDay(dateStr) {
 // KANBAN VIEW
 // =============================================================================
 
+function setKanbanGroupBy(value) {
+  kanbanGroupBy = value;
+  renderKanbanView();
+}
+
 function renderKanbanView() {
   var board = document.getElementById('kanban-board');
-  var statuses = [
-    { key: 'todo', label: t('colTodo'), cssClass: 'col-todo' },
-    { key: 'progress', label: t('colProgress'), cssClass: 'col-progress' },
-    { key: 'done', label: t('colDone'), cssClass: 'col-done' }
-  ];
+  var sel = document.getElementById('kanban-groupby');
+  if (sel && sel.value !== kanbanGroupBy) sel.value = kanbanGroupBy;
+
+  var columns = [];
+  var filteredTasks = getFilteredTasks();
+
+  if (kanbanGroupBy === 'priority') {
+    columns = [
+      { key: 'high',   label: '🔴 ' + t('priorityHigh'),   cssClass: 'col-todo',     field: 'Priority' },
+      { key: 'medium', label: '🟡 ' + t('priorityMedium'), cssClass: 'col-progress', field: 'Priority' },
+      { key: 'low',    label: '🟢 ' + t('priorityLow'),    cssClass: 'col-done',     field: 'Priority' }
+    ];
+  } else if (kanbanGroupBy === 'project') {
+    var projMap = {};
+    filteredTasks.forEach(function(task) {
+      var pid = task.Project_Id || 0;
+      if (!projMap[pid]) {
+        projMap[pid] = { key: String(pid), label: pid ? (getProjectName(pid) || 'Projet ' + pid) : (currentLang === 'fr' ? 'Sans projet' : 'No project'), cssClass: 'col-todo', field: 'Project_Id', tasks: [], color: getProjectColor(pid || null) };
+      }
+      projMap[pid].tasks.push(task);
+    });
+    columns = Object.values(projMap).sort(function(a, b) { return a.label.localeCompare(b.label); });
+  } else {
+    columns = [
+      { key: 'todo',     label: t('colTodo'),     cssClass: 'col-todo',     field: 'Status' },
+      { key: 'progress', label: t('colProgress'), cssClass: 'col-progress', field: 'Status' },
+      { key: 'done',     label: t('colDone'),     cssClass: 'col-done',     field: 'Status' }
+    ];
+  }
 
   var html = '';
-  var filteredTasks = getFilteredTasks();
-  for (var s = 0; s < statuses.length; s++) {
-    var st = statuses[s];
-    var colTasks = filteredTasks.filter(function(task) { return task.Status === st.key; });
+  for (var s = 0; s < columns.length; s++) {
+    var col = columns[s];
+    var colTasks = col.tasks || filteredTasks.filter(function(task) {
+      if (col.field === 'Status') return task.Status === col.key;
+      if (col.field === 'Priority') return task.Priority === col.key;
+      return false;
+    });
+    var dotStyle = col.color ? 'display:inline-block;width:10px;height:10px;border-radius:50%;background:' + col.color + ';margin-right:6px;' : 'display:none;';
 
-    html += '<div class="kanban-column ' + st.cssClass + '">';
+    html += '<div class="kanban-column ' + col.cssClass + '">';
     html += '<div class="kanban-col-header">';
-    html += '<div style="display:flex;align-items:center;gap:8px;">' + st.label + ' <span class="col-count">' + colTasks.length + '</span></div>';
-    html += '<button class="col-add" onclick="openNewTaskModal(\'' + st.key + '\')">+</button>';
+    html += '<div style="display:flex;align-items:center;gap:4px;"><span style="' + dotStyle + '"></span>' + col.label + ' <span class="col-count">' + colTasks.length + '</span></div>';
+    if (kanbanGroupBy === 'status') html += '<button class="col-add" onclick="openNewTaskModal(\'' + col.key + '\')">+</button>';
     html += '</div>';
-    html += '<div class="kanban-cards" data-status="' + st.key + '" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">';
+    html += '<div class="kanban-cards" data-groupby="' + kanbanGroupBy + '" data-value="' + sanitize(col.key) + '" data-field="' + col.field + '" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">';
 
     if (colTasks.length === 0) {
       html += '<div class="kanban-empty"><div class="kanban-empty-icon">📝</div>' + t('noTasks') + '</div>';
@@ -2553,7 +2595,7 @@ function renderKanbanView() {
     }
 
     html += '</div>';
-    html += '<button class="kanban-add-btn" onclick="openNewTaskModal(\'' + st.key + '\')">' + t('addTask') + '</button>';
+    if (kanbanGroupBy === 'status') html += '<button class="kanban-add-btn" onclick="openNewTaskModal(\'' + col.key + '\')">' + t('addTask') + '</button>';
     html += '</div>';
   }
 
@@ -2658,16 +2700,20 @@ function onDragLeave(e) {
 async function onDrop(e) {
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
-  var newStatus = e.currentTarget.getAttribute('data-status');
-  if (draggedTaskId && newStatus) {
+  var field = e.currentTarget.getAttribute('data-field') || 'Status';
+  var newValue = e.currentTarget.getAttribute('data-value');
+  if (draggedTaskId && newValue) {
     try {
-      await grist.docApi.applyUserActions([
-        ['UpdateRecord', TASKS_TABLE, draggedTaskId, { Status: newStatus }]
-      ]);
-      // Update local state
+      var record = {};
+      if (field === 'Project_Id') {
+        record[field] = newValue ? parseInt(newValue) : null;
+      } else {
+        record[field] = newValue;
+      }
+      await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, draggedTaskId, record]]);
       for (var i = 0; i < tasks.length; i++) {
         if (tasks[i].id === draggedTaskId) {
-          tasks[i].Status = newStatus;
+          tasks[i][field] = record[field];
           break;
         }
       }
@@ -2751,7 +2797,7 @@ function renderTableView() {
       var st = taskSubtasks[si];
       html += '<tr class="subtask-row" data-parent="' + task.id + '" style="display:none;">';
       html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
-      html += '<td><span class="st-checkbox" onclick="toggleSubtaskFromTable(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;">' + (st.Completed ? '✅' : '⬜') + '</span></td>';
+      html += '<td><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:16px;height:16px;" /></td>';
       html += '<td colspan="6"></td>';
       html += '</tr>';
     }
@@ -2903,6 +2949,15 @@ function getGanttSubtaskRange(st, parentTask) {
 
 // Slot de toggle à insérer dans la cellule de libellé. Toujours rendu (largeur fixe)
 // pour que tous les titres soient alignés, même quand la tâche n'a pas de sous-tâche.
+function ganttDepBadge(task) {
+  var deps = getTaskDependencies(task.id);
+  var blocks = getTasksDependingOn(task.id);
+  var html = '';
+  if (deps.length > 0) html += ' <span title="' + (currentLang === 'fr' ? 'Dépend de: ' : 'Depends on: ') + deps.map(function(d) { return sanitize(d.Title); }).join(', ') + '" style="font-size:10px;color:#8b5cf6;cursor:help;">🔗' + deps.length + '</span>';
+  if (blocks.length > 0) html += ' <span title="' + (currentLang === 'fr' ? 'Bloque: ' : 'Blocks: ') + blocks.map(function(d) { return sanitize(d.Title); }).join(', ') + '" style="font-size:10px;color:#f59e0b;cursor:help;">⏳' + blocks.length + '</span>';
+  return html;
+}
+
 function ganttChevron(task) {
   if (getGanttSubtasks(task.id).length === 0) {
     return '<span class="gantt-toggle gantt-toggle-empty"></span>';
@@ -2985,7 +3040,7 @@ function renderGanttView() {
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
       var ganttProjColor = getProjectColor(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
+      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + ganttDepBadge(task) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🏷️ ' + priorityLabel(task.Priority);
       if (assigneeDisplay) html += ' 👤 ' + sanitize(assigneeDisplay).substring(0, 15);
@@ -3086,7 +3141,7 @@ function renderGanttView() {
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
       var ganttProjColor = getProjectColor(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
+      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + ganttDepBadge(task) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🏷️ ' + priorityLabel(task.Priority);
       if (assigneeDisplay) html += ' 👤 ' + sanitize(assigneeDisplay).substring(0, 15);
@@ -4289,7 +4344,14 @@ function openEditTaskModal(taskId, preserveAssignees) {
       if (st.Assignee) html += '<span class="subtask-assignee-badge">👤 ' + sanitize(st.Assignee) + '</span>';
       if (stDueDateStr) html += '<span class="subtask-due-badge' + stDueClass + '">📅 ' + stDueDateStr + '</span>';
       if (st.Estimated_Hours) html += '<span class="subtask-assignee-badge">⏱ ' + st.Estimated_Hours + 'h</span>';
+      if (st.Recurrence && st.Recurrence !== 'none') {
+        var recSymbol = st.Recurrence === 'daily' ? '🔄 D' : (st.Recurrence === 'weekly' ? '🔄 W' : '🔄 M');
+        html += '<span class="subtask-assignee-badge" title="' + t('recurrence') + '">'+  recSymbol + '</span>';
+      }
       html += '</span>';
+      if (st.Recurrence && st.Recurrence !== 'none') {
+        html += '<button class="subtask-dep-btn" onclick="generateSubtaskOccurrences(' + st.id + ', ' + task.id + ')" title="' + t('generateMonth') + '">📅+</button>';
+      }
       html += '<button class="subtask-edit-btn" onclick="startEditSubtask(' + st.id + ', ' + task.id + ')" title="' + t('editSubtask') + '">✏️</button>';
       html += '<button class="subtask-dep-btn" onclick="openSubtaskDepModal(' + st.id + ', ' + task.id + ')" title="' + t('dependencies') + '">🔗</button>';
       html += '<button class="subtask-delete" onclick="deleteSubtask(' + st.id + ', ' + task.id + ')" title="' + t('delete') + '">✕</button>';
@@ -4335,6 +4397,17 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '<select id="st-assignee-' + st.id + '" style="flex:1;min-width:100px;">' + userOptions + '</select>';
       html += '<input type="date" class="subtask-edit-date" id="st-due-' + st.id + '" value="' + stDueDateInput + '">';
       html += '<input type="number" class="st-hours-input" id="st-hours-' + st.id + '" value="' + (st.Estimated_Hours || '') + '" placeholder="' + (currentLang === 'fr' ? 'Heures' : 'Hours') + '" min="0" step="0.5">';
+      html += '</div>';
+      // Recurrence
+      var stRecur = st.Recurrence || 'none';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">';
+      html += '<span style="font-size:11px;color:#64748b;">🔄 ' + (currentLang === 'fr' ? 'Récurrence' : 'Recurrence') + '</span>';
+      html += '<select id="st-recur-' + st.id + '" style="flex:1;font-size:12px;">';
+      html += '<option value="none"' + (stRecur === 'none' ? ' selected' : '') + '>' + t('recurrenceNone') + '</option>';
+      html += '<option value="daily"' + (stRecur === 'daily' ? ' selected' : '') + '>' + t('recurrenceDaily') + '</option>';
+      html += '<option value="weekly"' + (stRecur === 'weekly' ? ' selected' : '') + '>' + t('recurrenceWeekly') + '</option>';
+      html += '<option value="monthly"' + (stRecur === 'monthly' ? ' selected' : '') + '>' + t('recurrenceMonthly') + '</option>';
+      html += '</select>';
       html += '</div>';
       // Actions
       html += '<div class="st-form-actions">';
@@ -4743,18 +4816,19 @@ async function addSubtask(parentTaskId) {
 async function toggleSubtask(subtaskId, completed) {
   var savedAssignees = editAssignees.slice();
   try {
+    // Sync Completed boolean AND Status field
+    var newStatus = completed ? 'done' : 'todo';
     await grist.docApi.applyUserActions([
-      ['UpdateRecord', SUBTASKS_TABLE, subtaskId, { Completed: completed }]
+      ['UpdateRecord', SUBTASKS_TABLE, subtaskId, { Completed: completed, Status: newStatus }]
     ]);
-    // Update local state
     for (var i = 0; i < subtasks.length; i++) {
       if (subtasks[i].id === subtaskId) {
         subtasks[i].Completed = completed;
+        subtasks[i].Status = newStatus;
         break;
       }
     }
     showToast(t('subtaskCompleted'), 'success');
-    // Refresh the subtasks list in modal without closing
     var subtask = subtasks.find(function(st) { return st.id === subtaskId; });
     if (subtask) {
       editAssignees = savedAssignees;
@@ -4816,18 +4890,22 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var assigneeSelect= document.getElementById('st-assignee-' + subtaskId);
   var dueDateInput  = document.getElementById('st-due-'      + subtaskId);
   var hoursInput    = document.getElementById('st-hours-'    + subtaskId);
+  var recurSel      = document.getElementById('st-recur-'    + subtaskId);
   if (!titleInput) return;
   var newTitle = titleInput.value.trim();
   if (!newTitle) return;
   var newAssignee = assigneeSelect ? assigneeSelect.value : '';
   var newDueDate = dueDateInput && dueDateInput.value ? Math.floor(new Date(dueDateInput.value).getTime() / 1000) : null;
+  var newStatus = statusSel ? statusSel.value : 'todo';
   var fields = {
     Title: newTitle,
     Description: descInput ? descInput.value : '',
-    Status: statusSel ? statusSel.value : 'todo',
+    Status: newStatus,
+    Completed: newStatus === 'done',
     Priority: prioritySel ? prioritySel.value : 'medium',
     Assignee: newAssignee,
-    Estimated_Hours: hoursInput && hoursInput.value ? parseFloat(hoursInput.value) : null
+    Estimated_Hours: hoursInput && hoursInput.value ? parseFloat(hoursInput.value) : null,
+    Recurrence: recurSel ? recurSel.value : 'none'
   };
   if (newDueDate) fields.Due_Date = newDueDate;
   var savedAssignees = editAssignees.slice();
@@ -4839,6 +4917,43 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
     openEditTaskModal(parentTaskId, true);
   } catch (e) {
     console.error('Error saving subtask:', e);
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function generateSubtaskOccurrences(subtaskId, parentTaskId) {
+  var st = subtasks.find(function(s) { return s.id === subtaskId; });
+  if (!st || !st.Recurrence || st.Recurrence === 'none') return;
+  var baseDate = st.Due_Date ? new Date(st.Due_Date * 1000) : new Date();
+  var actions = [];
+  var count = st.Recurrence === 'daily' ? 7 : (st.Recurrence === 'weekly' ? 4 : 3);
+  for (var i = 1; i <= count; i++) {
+    var d = new Date(baseDate);
+    if (st.Recurrence === 'daily') d.setDate(d.getDate() + i);
+    else if (st.Recurrence === 'weekly') d.setDate(d.getDate() + i * 7);
+    else d.setMonth(d.getMonth() + i);
+    actions.push(['AddRecord', SUBTASKS_TABLE, null, {
+      Parent_Task_Id: parentTaskId,
+      Title: st.Title,
+      Description: st.Description || '',
+      Status: 'todo',
+      Priority: st.Priority || 'medium',
+      Assignee: st.Assignee || '',
+      Due_Date: Math.floor(d.getTime() / 1000),
+      Recurrence: st.Recurrence,
+      Completed: false,
+      Order: (st.Order || 0) + i
+    }]);
+  }
+  try {
+    await grist.docApi.applyUserActions(actions);
+    showToast((currentLang === 'fr' ? count + ' occurrence(s) créée(s)' : count + ' occurrence(s) created'), 'success');
+    var savedAssignees = editAssignees.slice();
+    await loadAllData();
+    editAssignees = savedAssignees;
+    openEditTaskModal(parentTaskId, true);
+  } catch (e) {
+    console.error('Error generating subtask occurrences:', e);
     showToast('Error: ' + e.message, 'error');
   }
 }
