@@ -114,6 +114,23 @@
       gap: 6px;
     }
     .btn-new-task:hover { background: #dc2626; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,0.3); }
+    .btn-new-project {
+      padding: 10px 18px;
+      background: transparent;
+      color: #6366f1;
+      border: 2px solid #6366f1;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-new-project:hover { background: #6366f1; color: white; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,0.3); }
+    body.dark-mode .btn-new-project { color: #818cf8; border-color: #818cf8; }
+    body.dark-mode .btn-new-project:hover { background: #6366f1; color: white; border-color: #6366f1; }
 
     /* ========== PROJECT SELECTOR ========== */
     .project-selector {
@@ -3498,6 +3515,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <div id="project-selector" class="project-selector"></div>
+          <button class="btn-new-project" onclick="openProjectModal()">+ <span data-i18n="newProject">Nouveau projet</span></button>
           <button class="btn-new-task" onclick="openNewTaskModal()">+ <span data-i18n="newTask">Nouvelle tâche</span></button>
         </div>
       </div>
@@ -3908,7 +3926,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=46"></script>
+  <script src="widget.js?v=47"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
