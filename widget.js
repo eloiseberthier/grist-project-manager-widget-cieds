@@ -595,6 +595,8 @@ var projects = [];
 var currentProjectId = null; // null = all projects
 var currentFilterRole = null;
 var currentFilterAssignee = null; // user Name
+var currentFilterCategory = null;
+var currentFilterTag = null;
 var activeTimers = {}; // taskId -> startTime (for running timers)
 var ganttMode = 'days';
 var ganttYear = new Date().getFullYear();
@@ -1706,6 +1708,25 @@ function renderProjectSelector() {
   });
   html += '</select>';
 
+  // Filtre Catégorie
+  var allCategories = [];
+  tasks.forEach(function(t) { if (t.Category && allCategories.indexOf(t.Category) === -1) allCategories.push(t.Category); });
+  allCategories.sort();
+  html += '<select id="category-filter" class="cascade-select' + (currentFilterCategory ? ' cascade-active' : '') + '" onchange="filterByCategory(this.value)" title="' + (currentLang === 'fr' ? 'Catégorie' : 'Category') + '">';
+  html += '<option value="">' + (currentLang === 'fr' ? '— Catégorie —' : '— Category —') + '</option>';
+  allCategories.forEach(function(cat) {
+    html += '<option value="' + sanitize(cat) + '"' + (currentFilterCategory === cat ? ' selected' : '') + '>' + sanitize(cat) + '</option>';
+  });
+  html += '</select>';
+
+  // Filtre Tag
+  html += '<select id="tag-filter" class="cascade-select' + (currentFilterTag ? ' cascade-active' : '') + '" onchange="filterByTag(this.value)" title="Tag">';
+  html += '<option value="">' + (currentLang === 'fr' ? '— Tag —' : '— Tag —') + '</option>';
+  tags.forEach(function(tag) {
+    html += '<option value="' + sanitize(tag.Name) + '"' + (currentFilterTag === tag.Name ? ' selected' : '') + '>' + sanitize(tag.Name) + '</option>';
+  });
+  html += '</select>';
+
   // Filtre Projet — combobox moderne avec recherche intégrée
   var selProj = currentProjectId ? projects.find(function(p) { return p.id === currentProjectId; }) : null;
   var btnLabel = selProj ? sanitize(selProj.Name) : (currentLang === 'fr' ? 'Tous les projets' : 'All projects');
@@ -1752,7 +1773,7 @@ function renderProjectSelector() {
   }
   html += '</div></div></div>';
 
-  if (currentFilterRole || currentFilterAssignee || currentProjectId) {
+  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId) {
     html += '<button class="btn-icon" onclick="resetFilters()" title="' + (currentLang === 'fr' ? 'Réinitialiser les filtres' : 'Reset filters') + '" style="color:#ef4444;">✕</button>';
   }
 
@@ -1767,7 +1788,7 @@ function renderProjectSelector() {
     var appEl = document.querySelector('.app-container') || document.body;
     appEl.insertBefore(banner, appEl.firstChild);
   }
-  if (currentFilterRole || currentFilterAssignee || currentProjectId) {
+  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId) {
     var proj2 = currentProjectId ? projects.find(function(p) { return p.id === currentProjectId; }) : null;
     var c2 = (proj2 && proj2.Color) ? proj2.Color : '#6366f1';
     var bits = [];
@@ -1777,6 +1798,8 @@ function renderProjectSelector() {
       var displayName = u ? (u.Name || u.Email) : currentFilterAssignee;
       bits.push('👤 ' + sanitize(displayName));
     }
+    if (currentFilterCategory) bits.push('📁 ' + sanitize(currentFilterCategory));
+    if (currentFilterTag) bits.push('🏷️ ' + sanitize(currentFilterTag));
     if (proj2) bits.push('🎯 ' + sanitize(proj2.Name));
     banner.innerHTML = (currentLang === 'fr' ? 'Filtres actifs : ' : 'Active filters: ') + '<strong>' + bits.join(' › ') + '</strong> — <a href="#" onclick="resetFilters();return false;" style="color:inherit;text-decoration:underline;">' + (currentLang === 'fr' ? 'Tout effacer' : 'Clear all') + '</a>';
     banner.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 16px;background:' + c2 + '15;border-bottom:2px solid' + c2 + ';color:' + c2 + ';font-size:12px;font-weight:600;';
@@ -1890,9 +1913,23 @@ function filterByAssignee(name) {
   refreshAllViews();
 }
 
+function filterByCategory(val) {
+  currentFilterCategory = val || null;
+  renderProjectSelector();
+  refreshAllViews();
+}
+
+function filterByTag(val) {
+  currentFilterTag = val || null;
+  renderProjectSelector();
+  refreshAllViews();
+}
+
 function resetFilters() {
   currentFilterRole = null;
   currentFilterAssignee = null;
+  currentFilterCategory = null;
+  currentFilterTag = null;
   currentProjectId = null;
   localStorage.setItem('pm-current-project', '');
   renderProjectSelector();
@@ -1916,6 +1953,12 @@ function getFilteredTasks() {
       var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); });
       return list.indexOf(currentFilterAssignee) !== -1;
     });
+  }
+  if (currentFilterCategory) {
+    result = result.filter(function(t) { return t.Category === currentFilterCategory; });
+  }
+  if (currentFilterTag) {
+    result = result.filter(function(t) { return t.Tag === currentFilterTag; });
   }
   if (currentProjectId) {
     var cpid = Number(currentProjectId);
@@ -2527,7 +2570,8 @@ function renderTaskCard(task) {
   var taskComments = getTaskComments(task.id);
 
   var priorityClass = 'priority-' + (task.Priority || 'medium');
-  var html = '<div class="task-card ' + priorityClass + (blocked ? ' task-blocked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + task.id + ')" data-id="' + task.id + '" ondblclick="openEditTaskModal(' + task.id + ')">';
+  var projColor = getProjectColor(task.Project_Id);
+  var html = '<div class="task-card ' + priorityClass + (blocked ? ' task-blocked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + task.id + ')" data-id="' + task.id + '" ondblclick="openEditTaskModal(' + task.id + ')" style="border-left:4px solid ' + projColor + ';">';
   
   // Blocked warning badge
   if (blocked) {
@@ -2658,6 +2702,7 @@ function renderTableView() {
   var html = '<table class="data-table">';
   html += '<thead><tr>';
   html += '<th>' + t('colTaskName') + '</th>';
+  html += '<th>' + (currentLang === 'fr' ? 'Projet' : 'Project') + '</th>';
   html += '<th>' + t('colStatus') + '</th>';
   html += '<th>' + t('colPriority') + '</th>';
   html += '<th>' + t('colAssignee') + '</th>';
@@ -2675,8 +2720,10 @@ function renderTableView() {
     var taskSubtasks = getTaskSubtasks(task.id);
     var completedSt = taskSubtasks.filter(function(st) { return st.Completed; }).length;
 
+    var taskProjColor = getProjectColor(task.Project_Id);
+    var taskProjName = getProjectName(task.Project_Id);
     html += '<tr class="task-row clickable-row" onclick="openEditTaskModal(' + task.id + ')">';
-    html += '<td><div style="display:flex;align-items:center;gap:8px;">';
+    html += '<td><div style="display:flex;align-items:center;gap:8px;border-left:3px solid ' + taskProjColor + ';padding-left:6px;">';
     if (taskSubtasks.length > 0) {
       html += '<button class="toggle-btn" onclick="event.stopPropagation(); toggleSubtasks(' + task.id + ')" id="toggle-' + task.id + '">▶</button>';
     } else {
@@ -2685,6 +2732,7 @@ function renderTableView() {
     html += '<div><div style="font-weight:700;">' + sanitize(task.Title) + '</div>';
     if (task.Description) html += '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">' + sanitize(task.Description).substring(0, 80) + '</div>';
     html += '</div></div></td>';
+    html += '<td>' + (taskProjName ? '<span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:' + taskProjColor + ';display:inline-block;"></span>' + sanitize(taskProjName) + '</span>' : '') + '</td>';
     html += '<td><span class="status-badge ' + statusClass + '">● ' + statusLabel(task.Status) + '</span>';
     if (taskSubtasks.length > 0) html += ' <span class="st-badge">' + completedSt + '/' + taskSubtasks.length + '</span>';
     html += '</td>';
@@ -2704,13 +2752,13 @@ function renderTableView() {
       html += '<tr class="subtask-row" data-parent="' + task.id + '" style="display:none;">';
       html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
       html += '<td><span class="st-checkbox" onclick="toggleSubtaskFromTable(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;">' + (st.Completed ? '✅' : '⬜') + '</span></td>';
-      html += '<td colspan="5"></td>';
+      html += '<td colspan="6"></td>';
       html += '</tr>';
     }
   }
 
   if (filtered.length === 0) {
-    html += '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8;">' + t('noTasks') + '</td></tr>';
+    html += '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8;">' + t('noTasks') + '</td></tr>';
   }
 
   html += '</tbody></table>';
@@ -2901,9 +2949,9 @@ function renderGanttView() {
 
   // ===== WEEKS MODE =====
   if (ganttMode === 'weeks') {
-    // Determine week range: show ~10 weeks centered on current month
+    // Determine week range: show ~26 weeks (6 months) from current month
     var startWeek = getISOWeek(new Date(ganttYear, ganttMonth, 1));
-    var numWeeks = 10;
+    var numWeeks = 26;
     var weeks = [];
     for (var w = 0; w < numWeeks; w++) {
       var wn = startWeek + w;
@@ -2937,7 +2985,8 @@ function renderGanttView() {
       var assigneeDisplay = task.Assignee ? getUserDisplayName(task.Assignee.split(',')[0].trim()) : '';
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
-      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
+      var ganttProjColor = getProjectColor(task.Project_Id);
+      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🏷️ ' + priorityLabel(task.Priority);
       if (assigneeDisplay) html += ' 👤 ' + sanitize(assigneeDisplay).substring(0, 15);
@@ -3037,7 +3086,8 @@ function renderGanttView() {
       var assigneeDisplay = task.Assignee ? getUserDisplayName(task.Assignee.split(',')[0].trim()) : '';
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
-      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
+      var ganttProjColor = getProjectColor(task.Project_Id);
+      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🏷️ ' + priorityLabel(task.Priority);
       if (assigneeDisplay) html += ' 👤 ' + sanitize(assigneeDisplay).substring(0, 15);
@@ -3139,6 +3189,15 @@ function renderGanttView() {
     if (tStart) tStart.setHours(0, 0, 0, 0);
     if (tEnd) tEnd.setHours(0, 0, 0, 0);
 
+    var barStartIdx = -1, barEndIdx = -1;
+    for (var di = 0; di < days.length; di++) {
+      var dday = days[di];
+      if (tStart && tEnd && dday >= tStart && dday <= tEnd) {
+        if (barStartIdx === -1) barStartIdx = di;
+        barEndIdx = di;
+      }
+    }
+
     for (var di = 0; di < days.length; di++) {
       var dd = days[di];
       var isToday = dd.getTime() === today.getTime();
@@ -3146,9 +3205,9 @@ function renderGanttView() {
       var cellClass = (isToday ? 'today-col' : '') + (isWeekend ? ' weekend-col' : '');
 
       html += '<td class="gantt-cell ' + cellClass + '">';
-      if (tStart && tEnd && dd.getTime() === tStart.getTime()) {
-        var span = Math.max(1, Math.round((tEnd - tStart) / (86400000)) + 1);
-        var widthPx = span * 36;
+      if (di === barStartIdx) {
+        var spanDays = barEndIdx - barStartIdx + 1;
+        var widthPx = spanDays * 36;
         html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title).substring(0, 12) + '</div>';
       }
       html += '</td>';
@@ -3165,6 +3224,14 @@ function renderGanttView() {
         var stStartDay = new Date(stRange.start); stStartDay.setHours(0, 0, 0, 0);
         var stEndDay = new Date(stRange.end); stEndDay.setHours(0, 0, 0, 0);
         var stBarClass = ganttSubtaskBarClass(st, task);
+        var stBarStartIdx = -1, stBarEndIdx = -1;
+        for (var di2 = 0; di2 < days.length; di2++) {
+          var dday2 = days[di2];
+          if (dday2 >= stStartDay && dday2 <= stEndDay) {
+            if (stBarStartIdx === -1) stBarStartIdx = di2;
+            stBarEndIdx = di2;
+          }
+        }
         html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
         for (var di2 = 0; di2 < days.length; di2++) {
           var dd2 = days[di2];
@@ -3172,9 +3239,9 @@ function renderGanttView() {
           var isWeekend2 = dd2.getDay() === 0 || dd2.getDay() === 6;
           var cellClass2 = (isToday2 ? 'today-col' : '') + (isWeekend2 ? ' weekend-col' : '');
           html += '<td class="gantt-cell ' + cellClass2 + '">';
-          if (dd2.getTime() === stStartDay.getTime()) {
-            var stSpan = Math.max(1, Math.round((stEndDay - stStartDay) / 86400000) + 1);
-            var stWidth = stSpan * 36;
+          if (di2 === stBarStartIdx) {
+            var stSpanDays = stBarEndIdx - stBarStartIdx + 1;
+            var stWidth = stSpanDays * 36;
             html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title).substring(0, 12) + '</div>';
           }
           html += '</td>';
@@ -3198,15 +3265,18 @@ function renderGanttView() {
 function ganttNav(dir) {
   if (ganttMode === 'months') {
     ganttYear += dir;
+    ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   } else if (ganttMode === 'weeks') {
-    // Navigate by ~2.5 months (10 weeks) at a time
+    // Navigate by 3 months (quarter) at a time
     ganttMonth += dir * 3;
     if (ganttMonth > 11) { ganttMonth -= 12; ganttYear++; }
     if (ganttMonth < 0) { ganttMonth += 12; ganttYear--; }
+    ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   } else {
     ganttMonth += dir * 2;
     if (ganttMonth > 11) { ganttMonth = 0; ganttYear++; }
     if (ganttMonth < 0) { ganttMonth = 10; ganttYear--; }
+    ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   }
   renderGanttView();
 }
@@ -3214,6 +3284,17 @@ function ganttNav(dir) {
 function ganttToday() {
   ganttYear = new Date().getFullYear();
   ganttMonth = new Date().getMonth();
+  renderGanttView();
+}
+
+function ganttExpandAll() {
+  var tasksWithSubs = tasks.filter(function(t) { return getGanttSubtasks(t.id).length > 0; });
+  tasksWithSubs.forEach(function(t) { expandedGanttTasks[t.id] = true; });
+  renderGanttView();
+}
+
+function ganttCollapseAll() {
+  expandedGanttTasks = {};
   renderGanttView();
 }
 
@@ -4434,6 +4515,13 @@ function openEditTaskModal(taskId, preserveAssignees) {
   }
   html += '</div>';
   
+  // Manual time entry
+  html += '<div class="manual-time-entry" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">';
+  html += '<input type="number" id="manual-hours" min="0" max="99" placeholder="0" style="width:52px;" class="form-input" title="' + (currentLang === 'fr' ? 'Heures' : 'Hours') + '"> h';
+  html += '<input type="number" id="manual-minutes" min="0" max="59" placeholder="0" style="width:52px;" class="form-input" title="' + (currentLang === 'fr' ? 'Minutes' : 'Minutes') + '"> min';
+  html += '<button class="btn btn-secondary btn-sm" onclick="addManualTimeEntry(' + task.id + ')">+ ' + (currentLang === 'fr' ? 'Ajouter' : 'Add') + '</button>';
+  html += '</div>';
+
   // Time summary
   html += '<div class="time-summary">';
   html += '<div class="detail-info-row"><span class="info-label">' + t('totalTime') + ' :</span><span class="info-value time-value">' + formatDuration(totalTime) + '</span></div>';
@@ -4867,6 +4955,35 @@ async function stopTimer(taskId) {
     openEditTaskModal(taskId);
   } catch (e) {
     console.error('Error stopping timer:', e);
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function addManualTimeEntry(taskId) {
+  var hours = parseInt(document.getElementById('manual-hours').value) || 0;
+  var minutes = parseInt(document.getElementById('manual-minutes').value) || 0;
+  var duration = hours * 3600 + minutes * 60;
+  if (duration <= 0) {
+    showToast(currentLang === 'fr' ? 'Entrez une durée valide' : 'Enter a valid duration', 'error');
+    return;
+  }
+  var now = Math.floor(Date.now() / 1000);
+  try {
+    await grist.docApi.applyUserActions([
+      ['AddRecord', TIME_ENTRIES_TABLE, null, {
+        Task_Id: taskId,
+        User: currentUserEmail || 'Utilisateur',
+        Start_Time: now - duration,
+        End_Time: now,
+        Duration: duration,
+        Description: currentLang === 'fr' ? 'Saisie manuelle' : 'Manual entry'
+      }]
+    ]);
+    showToast(t('timeEntryAdded'), 'success');
+    await loadAllData();
+    openEditTaskModal(taskId);
+  } catch (e) {
+    console.error('Error adding manual time entry:', e);
     showToast('Error: ' + e.message, 'error');
   }
 }
