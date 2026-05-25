@@ -2796,7 +2796,9 @@ function renderTableView() {
     for (var si = 0; si < taskSubtasks.length; si++) {
       var st = taskSubtasks[si];
       html += '<tr class="subtask-row" data-parent="' + task.id + '" style="display:none;">';
-      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
+      var stStatus = st.Status || (st.Completed ? 'done' : 'todo');
+      var stStatusLabel = stStatus === 'done' ? t('statusDone') : (stStatus === 'progress' ? t('statusProgress') : t('statusTodo'));
+      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span><span class="st-status-badge ' + stStatus + '" style="margin-left:8px;">' + stStatusLabel + '</span></div></td>';
       html += '<td colspan="7"></td>';
       html += '</tr>';
     }
