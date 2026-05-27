@@ -1215,6 +1215,20 @@ async function ensureTables() {
       ]);
     }
 
+    // Migration Project_Id : s'exécute APRÈS PM_Projects (install fraîche ou upgrade)
+    // Séparé du bloc "existingTables" pour couvrir aussi les installations fraîches.
+    try {
+      var taskColsCheck = Object.keys(await grist.docApi.fetchTable(TASKS_TABLE));
+      if (taskColsCheck.indexOf('Project_Id') === -1) {
+        await grist.docApi.applyUserActions([
+          ['AddColumn', TASKS_TABLE, 'Project_Id', { type: 'Ref:PM_Projects' }]
+        ]);
+        console.log('[GristPM] Project_Id ajouté à PM_Tasks');
+      }
+    } catch (e) {
+      console.log('[GristPM] Migration Project_Id ignorée :', e.message);
+    }
+
     // Create PM_Config table for column mapping configuration
     if (existingTables.indexOf(CONFIG_TABLE) === -1) {
       await grist.docApi.applyUserActions([
@@ -1300,11 +1314,6 @@ async function ensureTables() {
         if (existingCols.indexOf('Tag') === -1) {
           await grist.docApi.applyUserActions([
             ['AddColumn', TASKS_TABLE, 'Tag', { type: 'Text' }]
-          ]);
-        }
-        if (existingCols.indexOf('Project_Id') === -1) {
-          await grist.docApi.applyUserActions([
-            ['AddColumn', TASKS_TABLE, 'Project_Id', { type: 'Ref:PM_Projects' }]
           ]);
         }
       } catch (migrationErr) {
@@ -1754,7 +1763,7 @@ function renderProjectSelector() {
   var PROJ_INITIAL_LIMIT = 5;
   html += '<div class="proj-dropdown-list" id="proj-dropdown-list">';
   // "All projects" option (always shown)
-  html += '<div class="proj-option' + (!currentProjectId ? ' selected' : '') + '" data-id="" data-name="" data-always="1" onclick="selectProjectOption(\'\',\'\')">';
+  html += '<div class="proj-option' + (!currentProjectId ? ' selected' : '') + '" data-id="" data-name="" data-always="1" onclick="selectProjectOption(\'\')">';
   html += '<span class="proj-dot" style="background:#94a3b8;opacity:.4;"></span>';
   html += '<span>' + (currentLang === 'fr' ? 'Tous les projets' : 'All projects') + '</span>';
   html += '</div>';
@@ -1765,12 +1774,11 @@ function renderProjectSelector() {
     var taskCount = allTasksForCount.filter(function(tt) { return tt.Project_Id === proj.id; }).length;
     var isSelected = currentProjectId === proj.id;
     var safeName = sanitize(proj.Name || '');
-    var safeNameJs = (proj.Name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     var isExtra = idx >= PROJ_INITIAL_LIMIT && !isSelected;
     html += '<div class="proj-option' + (isSelected ? ' selected' : '') + '"';
     html += ' data-id="' + proj.id + '" data-name="' + safeName + '"';
     if (isExtra) html += ' data-extra="1" style="display:none;"';
-    html += ' onclick="selectProjectOption(' + proj.id + ',\'' + safeNameJs + '\')">';
+    html += ' onclick="selectProjectOption(' + proj.id + ')">';
     html += '<span class="proj-dot" style="background:' + (proj.Color || '#6366f1') + ';"></span>';
     html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;">' + safeName + '</span>';
     if (taskCount > 0) html += '<span class="proj-count">' + taskCount + '</span>';
@@ -1877,7 +1885,7 @@ function filterProjectDropdown(query) {
   }
 }
 
-function selectProjectOption(projectId, projectName) {
+function selectProjectOption(projectId) {
   var dd = document.getElementById('project-dropdown');
   var btn = document.getElementById('proj-combobox-btn');
   if (dd) dd.classList.remove('show');
@@ -5469,7 +5477,7 @@ async function createTask() {
   if (!title) return;
 
   var projectEl = document.getElementById('task-project');
-  var projectId = projectEl && projectEl.value ? parseInt(projectEl.value) : null;
+  var projectId = projectEl && projectEl.value ? parseInt(projectEl.value) : 0;
 
   var record = {};
   setField(record, 'tasks', 'title', title);
@@ -5514,7 +5522,7 @@ async function updateTask(taskId) {
   var newRecurrence = recurrenceEl ? recurrenceEl.value : (task ? task.Recurrence : 'none');
 
   var projectEl = document.getElementById('task-project');
-  var projectId = projectEl && projectEl.value ? parseInt(projectEl.value) : null;
+  var projectId = projectEl && projectEl.value ? parseInt(projectEl.value) : 0;
 
   var record = {};
   setField(record, 'tasks', 'title', title);
