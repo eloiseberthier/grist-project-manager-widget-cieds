@@ -751,7 +751,8 @@
       border-color: #cbd5e1;
     }
     .task-card.dragging { opacity: 0.6; transform: rotate(3deg) scale(1.02); }
-    .kanban-status-item { transition: transform 0.15s ease, box-shadow 0.15s ease; cursor: grab; user-select: none; }
+    .kanban-status-item { transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; cursor: grab; user-select: none; }
+    .kanban-status-item:hover { transform: translateX(4px) scale(1.01); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
     .kanban-status-item:active { cursor: grabbing; }
     .kanban-status-item.dragging { opacity: 0.4; transform: scale(0.97); }
     .kanban-status-item.drag-over-above { box-shadow: 0 -2px 0 0 #3b82f6; }
@@ -4012,7 +4013,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=57"></script>
+  <script src="widget.js?v=58"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
