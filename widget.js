@@ -6436,7 +6436,8 @@ function renderKanbanStatusesList() {
   for (var i = 0; i < statuses.length; i++) {
     var s = statuses[i];
     var label = currentLang === 'fr' ? s.label_fr : s.label_en;
-    html += '<div class="kanban-status-item" draggable="true" data-status-index="' + i + '" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:white;border-radius:8px;margin-bottom:6px;border:1px solid #e2e8f0;">';
+    var c = s.color || '#94a3b8';
+    html += '<div class="kanban-status-item" draggable="true" data-status-index="' + i + '" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:' + c + '10;border-radius:8px;margin-bottom:6px;border:1px solid ' + c + '30;border-left:3px solid ' + c + ';">';
     html += '<span class="kanban-status-drag-handle" title="' + (currentLang === 'fr' ? 'Glisser pour réordonner' : 'Drag to reorder') + '">⠿</span>';
     html += '<span style="width:14px;height:14px;border-radius:50%;background:' + (s.color || '#94a3b8') + ';flex-shrink:0;"></span>';
     html += '<span style="flex:1;font-size:13px;font-weight:600;">' + sanitize(label) + '</span>';
