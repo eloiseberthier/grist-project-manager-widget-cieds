@@ -2149,15 +2149,27 @@ function refreshAllViews() {
 // =============================================================================
 
 function updateStats() {
+  var container = document.getElementById('stats-row');
+  if (!container) return;
   var filteredTasks = getFilteredTasks();
   var total = filteredTasks.length;
-  var todo = filteredTasks.filter(function(t) { return t.Status === 'todo'; }).length;
-  var progress = filteredTasks.filter(function(t) { return t.Status === 'progress'; }).length;
-  var done = filteredTasks.filter(function(t) { return t.Status === 'done'; }).length;
-  document.getElementById('stat-total').textContent = total;
-  document.getElementById('stat-todo').textContent = todo;
-  document.getElementById('stat-progress').textContent = progress;
-  document.getElementById('stat-done').textContent = done;
+  var html = '';
+  if (showArchivedTasks) {
+    html += '<div class="stat-card stat-total"><div><div class="stat-label">' + (currentLang === 'fr' ? 'Archivées' : 'Archived') + '</div><div class="stat-value">' + total + '</div></div><div class="stat-icon">📦</div></div>';
+  } else {
+    html += '<div class="stat-card stat-total"><div><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div><div class="stat-icon">📋</div></div>';
+    var statuses = getKanbanStatuses();
+    var statusIcons = { todo: '📝', progress: '🔄', done: '✅' };
+    for (var i = 0; i < statuses.length; i++) {
+      var s = statuses[i];
+      var count = filteredTasks.filter(function(t) { return t.Status === s.key; }).length;
+      var label = currentLang === 'fr' ? s.label_fr : s.label_en;
+      var icon = statusIcons[s.key] || '⬤';
+      var color = s.color || '#94a3b8';
+      html += '<div class="stat-card"><div><div class="stat-label">' + sanitize(label) + '</div><div class="stat-value" style="color:' + color + '">' + count + '</div></div><div class="stat-icon">' + icon + '</div></div>';
+    }
+  }
+  container.innerHTML = html;
 }
 
 // =============================================================================
