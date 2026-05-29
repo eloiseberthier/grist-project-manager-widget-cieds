@@ -962,6 +962,57 @@ function closeConfirmModal(result) {
   }
 }
 
+var promptResolve = null;
+
+function showPromptModal(title, fields, defaults) {
+  return new Promise(function(resolve) {
+    promptResolve = resolve;
+    document.getElementById('prompt-modal-title').textContent = title;
+    var body = '';
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      var val = defaults && defaults[i] !== undefined ? defaults[i] : '';
+      body += '<label>' + f.label + '</label>';
+      if (f.type === 'color') {
+        body += '<input type="color" id="prompt-field-' + i + '" value="' + (val || '#3b82f6') + '">';
+      } else {
+        body += '<input type="text" id="prompt-field-' + i + '" value="' + sanitize(val) + '" placeholder="' + (f.placeholder || '') + '">';
+      }
+    }
+    document.getElementById('prompt-modal-body').innerHTML = body;
+    document.getElementById('prompt-modal').style.display = 'flex';
+    var firstInput = document.getElementById('prompt-field-0');
+    if (firstInput) setTimeout(function() { firstInput.focus(); firstInput.select(); }, 50);
+    document.getElementById('prompt-modal')._fieldCount = fields.length;
+    document.getElementById('prompt-modal').onkeydown = function(e) {
+      if (e.key === 'Enter') submitPromptModal();
+      if (e.key === 'Escape') closePromptModal();
+    };
+  });
+}
+
+function submitPromptModal() {
+  var count = document.getElementById('prompt-modal')._fieldCount || 1;
+  var values = [];
+  for (var i = 0; i < count; i++) {
+    var el = document.getElementById('prompt-field-' + i);
+    values.push(el ? el.value : '');
+  }
+  document.getElementById('prompt-modal').style.display = 'none';
+  if (promptResolve) {
+    promptResolve(values);
+    promptResolve = null;
+  }
+}
+
+function closePromptModal() {
+  document.getElementById('prompt-modal').style.display = 'none';
+  if (promptResolve) {
+    promptResolve(null);
+    promptResolve = null;
+  }
+}
+
 function getTaskComments(taskId) {
   return comments.filter(function(c) { return c.Task_Id === taskId; })
     .sort(function(a, b) { return (b.Created_At || 0) - (a.Created_At || 0); });
@@ -6390,9 +6441,19 @@ function ensureCustomStatuses() {
 }
 
 async function addKanbanStatus() {
-  var labelFr = prompt(currentLang === 'fr' ? 'Nom du statut (FR) :' : 'Status name (FR):');
-  if (!labelFr) return;
-  var labelEn = prompt(currentLang === 'fr' ? 'Nom du statut (EN) :' : 'Status name (EN):') || labelFr;
+  var result = await showPromptModal(
+    currentLang === 'fr' ? 'Nouveau statut' : 'New status',
+    [
+      { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)', placeholder: currentLang === 'fr' ? 'Ex: À valider' : 'Ex: In review' },
+      { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)', placeholder: currentLang === 'fr' ? 'Ex: To validate' : 'Ex: In review' },
+      { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
+    ],
+    ['', '', '#8b5cf6']
+  );
+  if (!result || !result[0]) return;
+  var labelFr = result[0].trim();
+  var labelEn = (result[1] || '').trim() || labelFr;
+  var color = result[2] || '#8b5cf6';
   var key = labelFr.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   if (!key) return;
   var existing = getKanbanStatuses();
@@ -6400,8 +6461,6 @@ async function addKanbanStatus() {
     showToast(currentLang === 'fr' ? 'Ce statut existe déjà' : 'This status already exists', 'error');
     return;
   }
-  var colors = ['#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1'];
-  var color = colors[existing.length % colors.length];
   ensureCustomStatuses();
   customKanbanStatuses.push({ key: key, label_fr: labelFr, label_en: labelEn, color: color, cssClass: 'col-custom' });
   await saveKanbanStatuses();
@@ -6414,13 +6473,19 @@ async function editKanbanStatus(index) {
   ensureCustomStatuses();
   var s = customKanbanStatuses[index];
   if (!s) return;
-  var labelFr = prompt(currentLang === 'fr' ? 'Nom (FR) :' : 'Name (FR):', s.label_fr);
-  if (!labelFr) return;
-  var labelEn = prompt(currentLang === 'fr' ? 'Nom (EN) :' : 'Name (EN):', s.label_en) || labelFr;
-  var color = prompt(currentLang === 'fr' ? 'Couleur (hex) :' : 'Color (hex):', s.color || '#94a3b8') || s.color;
-  customKanbanStatuses[index].label_fr = labelFr;
-  customKanbanStatuses[index].label_en = labelEn;
-  customKanbanStatuses[index].color = color;
+  var result = await showPromptModal(
+    currentLang === 'fr' ? 'Modifier le statut' : 'Edit status',
+    [
+      { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)' },
+      { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)' },
+      { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
+    ],
+    [s.label_fr, s.label_en, s.color || '#94a3b8']
+  );
+  if (!result || !result[0]) return;
+  customKanbanStatuses[index].label_fr = result[0].trim();
+  customKanbanStatuses[index].label_en = (result[1] || '').trim() || result[0].trim();
+  customKanbanStatuses[index].color = result[2] || s.color;
   await saveKanbanStatuses();
   renderKanbanStatusesList();
   renderKanbanView();

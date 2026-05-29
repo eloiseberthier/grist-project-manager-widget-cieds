@@ -1594,6 +1594,38 @@
     #confirm-modal {
       z-index: 2100;
     }
+    #prompt-modal {
+      z-index: 2100;
+    }
+    #prompt-modal input[type="text"],
+    #prompt-modal input[type="color"] {
+      width: 100%;
+      padding: 10px 14px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #prompt-modal input[type="text"]:focus {
+      border-color: #3b82f6;
+    }
+    #prompt-modal label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 6px;
+      margin-top: 12px;
+    }
+    #prompt-modal label:first-child {
+      margin-top: 0;
+    }
+    #prompt-modal input[type="color"] {
+      height: 42px;
+      padding: 4px;
+      cursor: pointer;
+    }
     .confirm-modal-content {
       max-width: 360px;
       text-align: center;
@@ -3921,6 +3953,20 @@
     </div>
   </div>
 
+  <!-- PROMPT MODAL -->
+  <div id="prompt-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:440px;padding:0;border-radius:16px;overflow:hidden;">
+      <div id="prompt-modal-header" style="padding:20px 24px 12px;border-bottom:1px solid #e2e8f0;">
+        <h3 id="prompt-modal-title" style="font-size:16px;font-weight:700;color:#1e293b;margin:0;"></h3>
+      </div>
+      <div id="prompt-modal-body" style="padding:20px 24px;"></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 24px 20px;border-top:1px solid #f1f5f9;">
+        <button class="btn btn-secondary" onclick="closePromptModal(null)" style="min-width:90px;">Annuler</button>
+        <button class="btn btn-primary" id="prompt-modal-ok" onclick="submitPromptModal()" style="min-width:90px;">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- PROJECT MODAL -->
   <div id="project-modal" class="modal-overlay" style="display:none;">
     <div class="modal-content" style="max-width:500px;">
@@ -3991,7 +4037,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=51"></script>
+  <script src="widget.js?v=52"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
