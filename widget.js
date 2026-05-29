@@ -1833,43 +1833,29 @@ function renderProjectSelector() {
 
   var html = '';
 
-  // Filtre Rôle — libellé localisé pour les rôles standards (admin/member/viewer)
-  html += '<select id="role-filter" class="cascade-select' + (currentFilterRole ? ' cascade-active' : '') + '" onchange="filterByRole(this.value)" title="Rôle">';
-  html += '<option value="">' + (currentLang === 'fr' ? '— Rôle —' : '— Role —') + '</option>';
-  roles.forEach(function(r) {
-    html += '<option value="' + sanitize(r) + '"' + (currentFilterRole === r ? ' selected' : '') + '>' + sanitize(roleLabel(r)) + '</option>';
-  });
-  html += '</select>';
+  // Filtre Rôle
+  var roleOptions = roles.map(function(r) { return { value: r, label: roleLabel(r) }; });
+  html += buildFilterCombo('role', currentLang === 'fr' ? '— Rôle —' : '— Role —', roleOptions, currentFilterRole, filterByRole);
 
-  // Filtre Personne — la valeur correspond à celle stockée dans task.Assignee (Email || Name)
-  html += '<select id="assignee-filter" class="cascade-select' + (currentFilterAssignee ? ' cascade-active' : '') + '" onchange="filterByAssignee(this.value)" title="Personne">';
-  html += '<option value="">' + (currentLang === 'fr' ? '— Personne —' : '— Person —') + '</option>';
+  // Filtre Personne
+  var personOptions = [];
   visibleUsers.forEach(function(u) {
     var val = u.Email || u.Name;
     var label = u.Name || u.Email;
-    if (!val) return;
-    html += '<option value="' + sanitize(val) + '"' + (currentFilterAssignee === val ? ' selected' : '') + '>' + sanitize(label) + '</option>';
+    if (val) personOptions.push({ value: val, label: label });
   });
-  html += '</select>';
+  html += buildFilterCombo('person', currentLang === 'fr' ? '— Personne —' : '— Person —', personOptions, currentFilterAssignee, filterByAssignee);
 
   // Filtre Catégorie
   var allCategories = [];
   tasks.forEach(function(t) { if (t.Category && allCategories.indexOf(t.Category) === -1) allCategories.push(t.Category); });
   allCategories.sort();
-  html += '<select id="category-filter" class="cascade-select' + (currentFilterCategory ? ' cascade-active' : '') + '" onchange="filterByCategory(this.value)" title="' + (currentLang === 'fr' ? 'Catégorie' : 'Category') + '">';
-  html += '<option value="">' + (currentLang === 'fr' ? '— Catégorie —' : '— Category —') + '</option>';
-  allCategories.forEach(function(cat) {
-    html += '<option value="' + sanitize(cat) + '"' + (currentFilterCategory === cat ? ' selected' : '') + '>' + sanitize(cat) + '</option>';
-  });
-  html += '</select>';
+  var catOptions = allCategories.map(function(c) { return { value: c, label: c }; });
+  html += buildFilterCombo('category', currentLang === 'fr' ? '— Catégorie —' : '— Category —', catOptions, currentFilterCategory, filterByCategory);
 
   // Filtre Tag
-  html += '<select id="tag-filter" class="cascade-select' + (currentFilterTag ? ' cascade-active' : '') + '" onchange="filterByTag(this.value)" title="Tag">';
-  html += '<option value="">' + (currentLang === 'fr' ? '— Tag —' : '— Tag —') + '</option>';
-  tags.forEach(function(tag) {
-    html += '<option value="' + sanitize(tag.Name) + '"' + (currentFilterTag === tag.Name ? ' selected' : '') + '>' + sanitize(tag.Name) + '</option>';
-  });
-  html += '</select>';
+  var tagOptions = tags.map(function(tag) { return { value: tag.Name, label: tag.Name }; });
+  html += buildFilterCombo('tag', '— Tag —', tagOptions, currentFilterTag, filterByTag);
 
   // Filtre Projet — combobox moderne avec recherche intégrée
   var selProj = currentProjectId ? projects.find(function(p) { return p.id === currentProjectId; }) : null;
@@ -1949,6 +1935,72 @@ function renderProjectSelector() {
   } else {
     banner.style.display = 'none';
   }
+}
+
+function buildFilterCombo(id, placeholder, options, selectedValue, onSelect) {
+  var selOpt = options.find(function(o) { return o.value === selectedValue; });
+  var label = selOpt ? selOpt.label : placeholder;
+  var isActive = !!selectedValue;
+  var h = '<div class="filter-combo" id="fc-' + id + '">';
+  h += '<button type="button" class="filter-combo-btn' + (isActive ? ' active' : '') + '" onclick="toggleFilterCombo(\'' + id + '\')" id="fc-btn-' + id + '">';
+  h += '<span class="filter-combo-label">' + sanitize(label) + '</span>';
+  h += '<span class="filter-combo-chevron">▾</span></button>';
+  h += '<div class="filter-combo-dd" id="fc-dd-' + id + '">';
+  h += '<div class="filter-combo-search"><input type="text" id="fc-search-' + id + '" placeholder="' + (currentLang === 'fr' ? 'Rechercher...' : 'Search...') + '" oninput="filterComboSearch(\'' + id + '\', this.value)" autocomplete="off"></div>';
+  h += '<div class="filter-combo-list" id="fc-list-' + id + '">';
+  h += '<div class="filter-combo-opt' + (!selectedValue ? ' selected' : '') + '" data-value="" data-label="' + sanitize(placeholder) + '" onclick="selectFilterCombo(\'' + id + '\', \'\')">' + sanitize(placeholder) + '</div>';
+  options.forEach(function(o) {
+    h += '<div class="filter-combo-opt' + (o.value === selectedValue ? ' selected' : '') + '" data-value="' + sanitize(o.value) + '" data-label="' + sanitize(o.label) + '" onclick="selectFilterCombo(\'' + id + '\', \'' + sanitize(o.value).replace(/'/g, "\\'") + '\')">' + sanitize(o.label) + '</div>';
+  });
+  h += '</div></div></div>';
+  window['_fcCallback_' + id] = onSelect;
+  return h;
+}
+
+function toggleFilterCombo(id) {
+  var dd = document.getElementById('fc-dd-' + id);
+  var btn = document.getElementById('fc-btn-' + id);
+  if (!dd) return;
+  var isOpen = dd.classList.contains('show');
+  document.querySelectorAll('.filter-combo-dd.show').forEach(function(d) { d.classList.remove('show'); });
+  document.querySelectorAll('.filter-combo-btn.open').forEach(function(b) { b.classList.remove('open'); });
+  if (!isOpen) {
+    dd.classList.add('show');
+    if (btn) btn.classList.add('open');
+    var inp = document.getElementById('fc-search-' + id);
+    if (inp) { inp.value = ''; inp.focus(); filterComboSearch(id, ''); }
+    setTimeout(function() {
+      document.addEventListener('mousedown', function hideFC(e) {
+        var box = document.getElementById('fc-' + id);
+        if (box && !box.contains(e.target)) {
+          var dd2 = document.getElementById('fc-dd-' + id);
+          var btn2 = document.getElementById('fc-btn-' + id);
+          if (dd2) dd2.classList.remove('show');
+          if (btn2) btn2.classList.remove('open');
+          document.removeEventListener('mousedown', hideFC);
+        }
+      });
+    }, 0);
+  }
+}
+
+function filterComboSearch(id, query) {
+  var list = document.getElementById('fc-list-' + id);
+  if (!list) return;
+  var q = (query || '').trim().toLowerCase();
+  list.querySelectorAll('.filter-combo-opt').forEach(function(opt) {
+    var label = (opt.dataset.label || '').toLowerCase();
+    opt.style.display = (!q || label.indexOf(q) !== -1) ? '' : 'none';
+  });
+}
+
+function selectFilterCombo(id, value) {
+  var dd = document.getElementById('fc-dd-' + id);
+  var btn = document.getElementById('fc-btn-' + id);
+  if (dd) dd.classList.remove('show');
+  if (btn) btn.classList.remove('open');
+  var cb = window['_fcCallback_' + id];
+  if (cb) cb(value);
 }
 
 function toggleProjectDropdown() {
