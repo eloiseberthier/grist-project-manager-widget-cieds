@@ -2654,6 +2654,10 @@ function renderKanbanView() {
       projMap[pid].tasks.push(task);
     });
     columns = Object.values(projMap).sort(function(a, b) { return a.label.localeCompare(b.label); });
+  } else if (showArchivedTasks) {
+    columns = [
+      { key: 'archived', label: currentLang === 'fr' ? '📦 Archives' : '📦 Archives', cssClass: 'col-custom', field: 'Status', color: '#94a3b8' }
+    ];
   } else {
     var statuses = getKanbanStatuses();
     columns = statuses.map(function(s) {
