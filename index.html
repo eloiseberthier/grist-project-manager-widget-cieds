@@ -622,16 +622,20 @@
 
     /* ========== KANBAN ========== */
     .kanban-board {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
+      display: flex;
+      gap: 12px;
       min-height: 400px;
+      overflow-x: auto;
+      padding-bottom: 8px;
     }
     .kanban-column {
       background: #f1f5f9;
       border-radius: 12px;
       padding: 0;
       min-height: 300px;
+      min-width: 260px;
+      max-width: 340px;
+      flex: 1 0 260px;
       display: flex;
       flex-direction: column;
     }
@@ -672,8 +676,9 @@
 
     .kanban-column-collapsed {
       min-height: 300px;
-      min-width: 48px;
-      max-width: 48px;
+      min-width: 42px;
+      max-width: 42px;
+      flex: 0 0 42px;
       cursor: pointer;
       display: flex;
       align-items: stretch;
@@ -2362,7 +2367,7 @@
 
     /* Blocked badge on cards */
     .task-blocked {
-      border-left: 3px solid #ef4444 !important;
+      opacity: 0.85;
     }
     .blocked-badge {
       background: #fef2f2;
@@ -3542,7 +3547,7 @@
     /* ========== RESPONSIVE ========== */
     @media (max-width: 768px) {
       .stats-row { grid-template-columns: repeat(2, 1fr); }
-      .kanban-board { grid-template-columns: 1fr; }
+      .kanban-column { min-width: 220px; flex: 1 0 220px; }
       .form-row { grid-template-columns: 1fr; }
       .header-row { flex-direction: column; align-items: flex-start; }
     }
@@ -4018,7 +4023,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=65"></script>
+  <script src="widget.js?v=66"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

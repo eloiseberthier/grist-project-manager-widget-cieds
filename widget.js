@@ -2847,7 +2847,12 @@ function renderTaskCard(task) {
 
   var priorityClass = 'priority-' + (task.Priority || 'medium');
   var projColor = getProjectColor(task.Project_Id);
-  var html = '<div class="task-card ' + priorityClass + (blocked ? ' task-blocked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + task.id + ')" data-id="' + task.id + '" ondblclick="openEditTaskModal(' + task.id + ')" style="border-left:4px solid ' + projColor + ';">';
+  var projName = getProjectName(task.Project_Id);
+  var html = '<div class="task-card ' + priorityClass + (blocked ? ' task-blocked' : '') + '" draggable="true" ondragstart="onDragStart(event, ' + task.id + ')" data-id="' + task.id + '" ondblclick="openEditTaskModal(' + task.id + ')" style="border-left:none;display:flex;flex-direction:row;padding:0;overflow:hidden;">';
+  html += '<div class="task-card-project-bar" style="background:' + projColor + ';min-width:22px;max-width:22px;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;flex-shrink:0;">';
+  if (projName) html += '<span style="color:white;font-size:9px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-height:120px;">' + sanitize(projName) + '</span>';
+  html += '</div>';
+  html += '<div style="flex:1;padding:10px 12px;min-width:0;">';
 
   if (blocked) {
     var blockers = getTaskDependencies(task.id).filter(function(b) { return b && b.Status !== 'done'; });
@@ -2914,7 +2919,7 @@ function renderTaskCard(task) {
     html += '<div class="task-card-row" style="justify-content:flex-end;"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();restoreTask(' + task.id + ')" title="' + (currentLang === 'fr' ? 'Restaurer' : 'Restore') + '">♻️ ' + (currentLang === 'fr' ? 'Restaurer' : 'Restore') + '</button></div>';
   }
 
-  html += '</div>';
+  html += '</div></div>';
   return html;
 }
 
@@ -2974,10 +2979,22 @@ function updateArchiveButton() {
 
 var draggedTaskId = null;
 
+var _kanbanScrollInterval = null;
 function onDragStart(e, taskId) {
   draggedTaskId = taskId;
   e.target.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
+  var board = document.getElementById('kanban-board');
+  if (board) {
+    document.addEventListener('dragover', function _autoScroll(ev) {
+      var rect = board.getBoundingClientRect();
+      var edge = 60;
+      var speed = 8;
+      if (ev.clientX > rect.right - edge) board.scrollLeft += speed;
+      else if (ev.clientX < rect.left + edge) board.scrollLeft -= speed;
+      if (!draggedTaskId) document.removeEventListener('dragover', _autoScroll);
+    });
+  }
 }
 
 function onDragOver(e) {
@@ -3350,11 +3367,12 @@ function renderGanttView() {
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
       var ganttProjColor = getProjectColor(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + ganttDepBadge(task) + '</div>';
+      var ganttProjName = getProjectName(task.Project_Id);
+      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> <strong>' + sanitize(task.Title) + '</strong>' + ganttDepBadge(task) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
       if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
-      if (task.Due_Date) html += ' ⏰ ' + (currentLang === 'fr' ? 'Échéance: ' : 'Due: ') + formatDate(task.Due_Date);
+      if (ganttProjName) html += ' <span style="display:inline-block;background:' + ganttProjColor + ';color:white;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;">' + sanitize(ganttProjName) + '</span>';
       html += '</div></td>';
 
       var tStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
@@ -3456,11 +3474,12 @@ function renderGanttView() {
       html += '<tr>';
       html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
       var ganttProjColor = getProjectColor(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span style="width:8px;height:8px;border-radius:50%;background:' + ganttProjColor + ';display:inline-block;margin-right:4px;flex-shrink:0;"></span><span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + ganttDepBadge(task) + '</div>';
+      var ganttProjName = getProjectName(task.Project_Id);
+      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> <strong>' + sanitize(task.Title) + '</strong>' + ganttDepBadge(task) + '</div>';
       html += '<div class="task-info">';
       if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
       if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
-      if (task.Due_Date) html += ' ⏰ ' + (currentLang === 'fr' ? 'Échéance: ' : 'Due: ') + formatDate(task.Due_Date);
+      if (ganttProjName) html += ' <span style="display:inline-block;background:' + ganttProjColor + ';color:white;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;">' + sanitize(ganttProjName) + '</span>';
       html += '</div></td>';
 
       var mTStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
@@ -3918,7 +3937,9 @@ async function addCategory() {
 
 async function deleteCategory(categoryId) {
   if (!isOwner) return;
-  
+  var confirmed = await showConfirmModal(currentLang === 'fr' ? 'Supprimer cette catégorie ?' : 'Delete this category?', currentLang === 'fr' ? 'Supprimer' : 'Delete');
+  if (!confirmed) return;
+
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', CATEGORIES_TABLE, categoryId]
@@ -6019,20 +6040,22 @@ function applyOwnerRestrictions() {
 
 function renderStatsView() {
   var filteredTasks = getFilteredTasks();
-  // Status chart
-  var statusCounts = { todo: 0, progress: 0, done: 0 };
+  // Status chart (dynamic based on custom statuses)
+  var kanbanStatuses = getKanbanStatuses();
+  var statusCounts = {};
+  kanbanStatuses.forEach(function(s) { statusCounts[s.key] = 0; });
   filteredTasks.forEach(function(t) { statusCounts[t.Status] = (statusCounts[t.Status] || 0) + 1; });
-  var maxStatus = Math.max(statusCounts.todo, statusCounts.progress, statusCounts.done, 1);
-  
+  var maxStatus = Math.max.apply(null, kanbanStatuses.map(function(s) { return statusCounts[s.key] || 0; }).concat([1]));
+
   var statusHtml = '';
-  var statusColors = { todo: '#94a3b8', progress: '#3b82f6', done: '#22c55e' };
-  var statusLabels = { todo: t('statusTodo'), progress: t('statusProgress'), done: t('statusDone') };
-  ['todo', 'progress', 'done'].forEach(function(s) {
-    var height = (statusCounts[s] / maxStatus) * 160;
+  kanbanStatuses.forEach(function(s) {
+    var count = statusCounts[s.key] || 0;
+    var height = (count / maxStatus) * 160;
+    var label = currentLang === 'fr' ? s.label_fr : s.label_en;
     statusHtml += '<div class="chart-bar">';
-    statusHtml += '<span class="chart-bar-value">' + statusCounts[s] + '</span>';
-    statusHtml += '<div class="chart-bar-fill" style="height:' + height + 'px;background:' + statusColors[s] + '"></div>';
-    statusHtml += '<span class="chart-bar-label">' + statusLabels[s] + '</span>';
+    statusHtml += '<span class="chart-bar-value">' + count + '</span>';
+    statusHtml += '<div class="chart-bar-fill" style="height:' + height + 'px;background:' + (s.color || '#94a3b8') + '"></div>';
+    statusHtml += '<span class="chart-bar-label">' + sanitize(label) + '</span>';
     statusHtml += '</div>';
   });
   document.getElementById('chart-status').innerHTML = statusHtml;
