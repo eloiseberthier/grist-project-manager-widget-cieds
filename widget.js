@@ -2734,7 +2734,8 @@ function renderKanbanView() {
     var isCollapsed = !!collapsedKanbanCols[col.key];
 
     if (isCollapsed) {
-      html += '<div class="kanban-column kanban-column-collapsed ' + col.cssClass + '" onclick="toggleKanbanCol(\'' + sanitize(col.key) + '\')" title="' + col.label + '">';
+      var collapsedStyle = col.color ? 'background:' + col.color + '15;border-left:3px solid ' + col.color + ';color:' + col.color + ';' : '';
+      html += '<div class="kanban-column kanban-column-collapsed ' + col.cssClass + '" onclick="toggleKanbanCol(\'' + sanitize(col.key) + '\')" title="' + col.label + '" style="' + collapsedStyle + '">';
       html += '<div class="kanban-col-header-collapsed">';
       html += '<span class="col-collapse-icon">⇄</span>';
       html += '<span class="col-collapsed-label">' + col.label + ' (' + colTasks.length + ')</span>';
