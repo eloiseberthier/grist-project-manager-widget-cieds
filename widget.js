@@ -2762,7 +2762,8 @@ function renderKanbanView() {
     html += '<div style="display:flex;align-items:center;gap:4px;"><span style="' + dotStyle + '"></span>' + col.label + ' <span class="col-count">' + colTasks.length + '</span></div>';
     html += '<div style="display:flex;align-items:center;gap:4px;">';
     if (kanbanGroupBy === 'status') html += '<button class="col-add" onclick="openNewTaskModal(\'' + col.key + '\')">+</button>';
-    html += '<button class="col-add" onclick="toggleKanbanCol(\'' + sanitize(col.key) + '\')" title="' + (currentLang === 'fr' ? 'Réduire' : 'Collapse') + '">⇄</button>';
+    var collapseColor = col.color ? 'color:' + col.color + ';opacity:0.5;' : '';
+    html += '<button class="col-add" onclick="toggleKanbanCol(\'' + sanitize(col.key) + '\')" title="' + (currentLang === 'fr' ? 'Réduire' : 'Collapse') + '" style="' + collapseColor + '">⇄</button>';
     html += '</div>';
     html += '</div>';
     html += '<div class="kanban-cards" data-groupby="' + kanbanGroupBy + '" data-value="' + sanitize(col.key) + '" data-field="' + col.field + '" ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">';
