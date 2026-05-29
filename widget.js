@@ -6415,6 +6415,7 @@ function renderSettingsView() {
   renderKanbanStatusesList();
 }
 
+var _statusDragIndex = null;
 function renderKanbanStatusesList() {
   var container = document.getElementById('kanban-statuses-list');
   if (!container) return;
@@ -6423,17 +6424,53 @@ function renderKanbanStatusesList() {
   for (var i = 0; i < statuses.length; i++) {
     var s = statuses[i];
     var label = currentLang === 'fr' ? s.label_fr : s.label_en;
-    html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:white;border-radius:8px;margin-bottom:6px;border:1px solid #e2e8f0;">';
+    html += '<div class="kanban-status-item" draggable="true" data-status-index="' + i + '" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:white;border-radius:8px;margin-bottom:6px;border:1px solid #e2e8f0;">';
+    html += '<span class="kanban-status-drag-handle" title="' + (currentLang === 'fr' ? 'Glisser pour réordonner' : 'Drag to reorder') + '">⠿</span>';
     html += '<span style="width:14px;height:14px;border-radius:50%;background:' + (s.color || '#94a3b8') + ';flex-shrink:0;"></span>';
     html += '<span style="flex:1;font-size:13px;font-weight:600;">' + sanitize(label) + '</span>';
     html += '<span style="font-size:10px;color:#94a3b8;font-family:monospace;">' + sanitize(s.key) + '</span>';
-    if (i > 0) html += '<button class="btn-icon" onclick="moveKanbanStatus(' + i + ', -1)" title="↑">⬆️</button>';
-    if (i < statuses.length - 1) html += '<button class="btn-icon" onclick="moveKanbanStatus(' + i + ', 1)" title="↓">⬇️</button>';
     html += '<button class="btn-icon" onclick="editKanbanStatus(' + i + ')" title="' + (currentLang === 'fr' ? 'Modifier' : 'Edit') + '">✏️</button>';
     if (statuses.length > 2) html += '<button class="btn-icon" onclick="removeKanbanStatus(' + i + ')" title="' + t('delete') + '">🗑️</button>';
     html += '</div>';
   }
   container.innerHTML = html;
+  var items = container.querySelectorAll('.kanban-status-item');
+  items.forEach(function(item) {
+    item.addEventListener('dragstart', function(e) {
+      _statusDragIndex = parseInt(item.dataset.statusIndex);
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', function() {
+      item.classList.remove('dragging');
+      items.forEach(function(el) { el.classList.remove('drag-over-above', 'drag-over-below'); });
+      _statusDragIndex = null;
+    });
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var targetIndex = parseInt(item.dataset.statusIndex);
+      if (targetIndex === _statusDragIndex) return;
+      items.forEach(function(el) { el.classList.remove('drag-over-above', 'drag-over-below'); });
+      item.classList.add(targetIndex < _statusDragIndex ? 'drag-over-above' : 'drag-over-below');
+    });
+    item.addEventListener('dragleave', function() {
+      item.classList.remove('drag-over-above', 'drag-over-below');
+    });
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      items.forEach(function(el) { el.classList.remove('drag-over-above', 'drag-over-below'); });
+      var targetIndex = parseInt(item.dataset.statusIndex);
+      if (_statusDragIndex === null || targetIndex === _statusDragIndex) return;
+      ensureCustomStatuses();
+      var moved = customKanbanStatuses.splice(_statusDragIndex, 1)[0];
+      customKanbanStatuses.splice(targetIndex, 0, moved);
+      saveKanbanStatuses().then(function() {
+        renderKanbanStatusesList();
+        renderKanbanView();
+      });
+    });
+  });
 }
 
 function ensureCustomStatuses() {
@@ -6503,17 +6540,7 @@ async function removeKanbanStatus(index) {
   showToast((currentLang === 'fr' ? 'Statut supprimé : ' : 'Status removed: ') + (currentLang === 'fr' ? removed.label_fr : removed.label_en), 'success');
 }
 
-async function moveKanbanStatus(index, direction) {
-  ensureCustomStatuses();
-  var newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= customKanbanStatuses.length) return;
-  var temp = customKanbanStatuses[index];
-  customKanbanStatuses[index] = customKanbanStatuses[newIndex];
-  customKanbanStatuses[newIndex] = temp;
-  await saveKanbanStatuses();
-  renderKanbanStatusesList();
-  renderKanbanView();
-}
+
 
 function renderCardDisplaySettings() {
   var container = document.getElementById('card-display-settings');
