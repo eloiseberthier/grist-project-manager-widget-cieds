@@ -669,6 +669,37 @@
     .col-done .kanban-col-header { border-bottom-color: #22c55e; color: #166534; }
     .col-done .col-count { color: #22c55e; }
 
+    .kanban-column-collapsed {
+      min-height: 300px;
+      min-width: 48px;
+      max-width: 48px;
+      cursor: pointer;
+      display: flex;
+      align-items: stretch;
+      transition: all 0.2s;
+    }
+    .kanban-column-collapsed:hover {
+      opacity: 0.8;
+    }
+    .kanban-col-header-collapsed {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px 4px;
+      font-weight: 700;
+      font-size: 12px;
+      width: 100%;
+    }
+    .col-collapse-icon {
+      font-size: 14px;
+    }
+    .col-collapsed-label {
+      white-space: nowrap;
+    }
+
     .kanban-cards {
       flex: 1;
       padding: 8px;
@@ -745,6 +776,16 @@
     .task-card-title:hover {
       background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     }
+    /* Couleurs de fond des cartes basées sur la priorité */
+    .task-card.priority-high {
+      background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
+    }
+    .task-card.priority-medium {
+      background: linear-gradient(135deg, #fffbeb 0%, #fde68a 100%);
+    }
+    .task-card.priority-low {
+      background: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%);
+    }
     .task-card.priority-high .task-card-title {
       background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
     }
@@ -754,19 +795,19 @@
     .task-card.priority-low .task-card-title {
       background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
     }
-    /* Couleurs selon le statut (colonne) */
-    .col-todo .task-card {
-      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-      border-left: 4px solid #f59e0b;
+    .task-card-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: 4px;
     }
-    .col-progress .task-card {
-      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-      border-left: 4px solid #3b82f6;
-    }
-    .col-done .task-card {
-      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-      border-left: 4px solid #22c55e;
-    }
+    .status-badge-todo { background: #fef3c7; color: #92400e; }
+    .status-badge-progress { background: #dbeafe; color: #1e40af; }
+    .status-badge-done { background: #dcfce7; color: #166534; }
     .task-card-actions { 
       display: flex; 
       gap: 4px;
@@ -1550,6 +1591,9 @@
       background: #1e293b;
     }
     /* Confirm Modal */
+    #confirm-modal {
+      z-index: 2100;
+    }
     .confirm-modal-content {
       max-width: 360px;
       text-align: center;
@@ -3583,6 +3627,7 @@
           <option value="priority">Priorité</option>
           <option value="project">Projet</option>
         </select>
+        <button id="archive-toggle-btn" class="btn btn-sm" onclick="toggleArchiveView()" style="margin-left:auto;padding:5px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;background:#f8fafc;cursor:pointer;font-weight:600;">📦 Archives</button>
       </div>
       <div class="kanban-board" id="kanban-board"></div>
     </div>
@@ -3599,9 +3644,6 @@
         <input type="text" id="table-search" placeholder="Rechercher une tâche..." data-i18n-placeholder="taskSearchPlaceholder" oninput="renderTableView()" />
         <select id="filter-status" onchange="renderTableView()">
           <option value="" data-i18n="allStatuses">Tous les statuts</option>
-          <option value="todo" data-i18n="statusTodo">À faire</option>
-          <option value="progress" data-i18n="statusProgress">En cours</option>
-          <option value="done" data-i18n="statusDone">Terminé</option>
         </select>
         <select id="filter-priority" onchange="renderTableView()">
           <option value="" data-i18n="allPriorities">Toutes priorités</option>
@@ -3809,6 +3851,29 @@
           <div id="tags-list" class="settings-content"></div>
         </div>
 
+        <!-- KANBAN STATUSES -->
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <div>
+              <h3>📊 <span data-i18n="manageStatuses">Colonnes Kanban</span></h3>
+              <p data-i18n="statusesSubtitle">Personnalisez les colonnes de statut du Kanban</p>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="addKanbanStatus()">+ <span data-i18n="addStatus">Ajouter</span></button>
+          </div>
+          <div id="kanban-statuses-list" class="settings-content"></div>
+        </div>
+
+        <!-- CARD DISPLAY SETTINGS -->
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <div>
+              <h3>🎨 <span data-i18n="cardDisplayTitle">Affichage des cartes</span></h3>
+              <p data-i18n="cardDisplaySubtitle">Choisissez les éléments visibles sur les cartes Kanban</p>
+            </div>
+          </div>
+          <div id="card-display-settings" class="settings-content"></div>
+        </div>
+
         <!-- COLUMN MAPPING SECTION -->
         <div class="settings-section" style="grid-column: 1 / -1;">
           <div class="settings-section-header">
@@ -3926,7 +3991,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=48"></script>
+  <script src="widget.js?v=50"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
