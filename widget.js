@@ -659,7 +659,8 @@ async function saveSetting(key, value) {
       _settingsCache[key].value = value;
     } else {
       var result = await grist.docApi.applyUserActions([['AddRecord', SETTINGS_TABLE, null, { Key: key, Value: value }]]);
-      _settingsCache[key] = { id: result, value: value };
+      var newId = (result && result.retValues && result.retValues[0]) || result;
+      _settingsCache[key] = { id: newId, value: value };
     }
   } catch (e) {
     console.error('[GristPM] Error saving setting:', e);
