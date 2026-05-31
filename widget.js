@@ -768,6 +768,7 @@ var columnMapping = {
 };
 
 var isOwner = false;
+var isEditor = false;
 var currentUserEmail = '';
 
 // =============================================================================
@@ -7063,7 +7064,8 @@ var PM_ACL_RULES = [
   { tableId: 'PM_Dependencies',    ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
   { tableId: 'PM_Users',           ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
   { tableId: 'PM_Groups',          ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
-  { tableId: 'PM_Projects',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' }
+  { tableId: 'PM_Projects',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_UserInfo',        ownerPerms: '+CRUDS', editorPerms: '+RCUD' }
 ];
 
 async function checkSecurityStatus() {
@@ -8089,12 +8091,93 @@ if (!isInsideGrist()) {
   (async function() {
     await grist.ready({ requiredAccess: 'full' });
 
+    // --- Role detection (Owner / Editor / Viewer) ---
+    var USER_INFO_TABLE = 'PM_UserInfo';
+    var helperWriteSucceeded = false;
+
+    // Step 1: Ensure helper table with trigger formula user.Email
     try {
-      await grist.docApi.fetchTable('_grist_ACLRules');
-      isOwner = true;
+      var tables = await grist.docApi.listTables();
+      if (tables.indexOf(USER_INFO_TABLE) === -1) {
+        await grist.docApi.applyUserActions([
+          ['AddTable', USER_INFO_TABLE, [
+            { id: 'UserEmail', fields: { type: 'Text', label: 'UserEmail' } }
+          ]]
+        ]);
+        await grist.docApi.applyUserActions([
+          ['ModifyColumn', USER_INFO_TABLE, 'UserEmail', {
+            isFormula: false,
+            formula: 'user.Email',
+            recalcWhen: 2,
+            recalcDeps: null
+          }]
+        ]);
+      }
     } catch (e) {
-      isOwner = false;
+      console.warn('Could not create helper table:', e.message);
     }
+
+    // Step 2: Read current user email via REST API (respects "View As")
+    try {
+      try {
+        var existingData = await grist.docApi.fetchTable(USER_INFO_TABLE);
+        var rowIds = (existingData && existingData.id) ? existingData.id : [];
+        var actions = [];
+        for (var r = 0; r < rowIds.length; r++) {
+          actions.push(['RemoveRecord', USER_INFO_TABLE, rowIds[r]]);
+        }
+        actions.push(['AddRecord', USER_INFO_TABLE, null, {}]);
+        await grist.docApi.applyUserActions(actions);
+        helperWriteSucceeded = true;
+      } catch (writeErr) {
+        console.log('Could not refresh row (read-only?):', writeErr.message);
+      }
+
+      var tokenInfo = await grist.docApi.getAccessToken({ readOnly: true });
+      var tableResp = await fetch(tokenInfo.baseUrl + '/tables/' + USER_INFO_TABLE + '/records?auth=' + tokenInfo.token);
+      if (tableResp.ok) {
+        var tableData = await tableResp.json();
+        if (tableData.records && tableData.records.length > 0) {
+          currentUserEmail = tableData.records[0].fields.UserEmail || '';
+        }
+      } else {
+        var userInfoData = await grist.docApi.fetchTable(USER_INFO_TABLE);
+        if (userInfoData && userInfoData.UserEmail && userInfoData.UserEmail.length > 0) {
+          currentUserEmail = userInfoData.UserEmail[0] || '';
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read helper table:', e.message);
+    }
+
+    // Step 3: Determine role — structure modify test
+    var roleDetected = false;
+    try {
+      await grist.docApi.applyUserActions([
+        ['ModifyColumn', USER_INFO_TABLE, 'UserEmail', {
+          isFormula: false,
+          formula: 'user.Email',
+          recalcWhen: 2,
+          recalcDeps: null
+        }]
+      ]);
+      isOwner = true; isEditor = false; roleDetected = true;
+    } catch (structErr) {
+      if (helperWriteSucceeded) {
+        isOwner = false; isEditor = true; roleDetected = true;
+      } else {
+        isOwner = false; isEditor = false; roleDetected = true;
+      }
+    }
+
+    if (!roleDetected) {
+      if (helperWriteSucceeded) {
+        isOwner = false; isEditor = true;
+      } else {
+        isOwner = false; isEditor = false;
+      }
+    }
+    console.log('Role detection — isOwner:', isOwner, 'isEditor:', isEditor, 'email:', currentUserEmail);
 
     loadDarkModePreference();
     applyOwnerRestrictions();
