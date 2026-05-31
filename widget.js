@@ -982,6 +982,12 @@ function showPromptModal(title, fields, defaults) {
       body += '<label>' + f.label + '</label>';
       if (f.type === 'color') {
         body += '<input type="color" id="prompt-field-' + i + '" value="' + (val || '#3b82f6') + '">';
+      } else if (f.type === 'emoji') {
+        body += '<div class="emoji-field-wrap">';
+        body += '<input type="text" id="prompt-field-' + i + '" value="' + sanitize(val) + '" placeholder="' + (f.placeholder || '') + '" class="emoji-field-input">';
+        body += '<button type="button" class="emoji-picker-btn" onclick="toggleEmojiPicker(' + i + ')">😀</button>';
+        body += '</div>';
+        body += '<div class="emoji-picker-grid" id="emoji-picker-' + i + '" style="display:none;"></div>';
       } else {
         body += '<input type="text" id="prompt-field-' + i + '" value="' + sanitize(val) + '" placeholder="' + (f.placeholder || '') + '">';
       }
@@ -1010,6 +1016,37 @@ function submitPromptModal() {
     promptResolve(values);
     promptResolve = null;
   }
+}
+
+var EMOJI_LIST = [
+  '💡','✅','🔍','📋','🚀','⏳','🎯','🔥','⭐','📌',
+  '🏗️','📝','🧪','🐛','✏️','📊','🔒','🔓','💬','📎',
+  '🎨','⚙️','📦','🗂️','🏷️','📅','⏰','🔔','💎','🌟',
+  '✨','❌','⚠️','🛑','🟢','🟡','🔴','🔵','🟣','🟠',
+  '👤','👥','🏠','📱','💻','🌐','📈','📉','🔧','🛠️',
+  '❤️','👍','👎','🎉','💪','🤔','📣','🏆','🎁','🔑'
+];
+
+function toggleEmojiPicker(fieldIndex) {
+  var picker = document.getElementById('emoji-picker-' + fieldIndex);
+  if (!picker) return;
+  if (picker.style.display !== 'none') {
+    picker.style.display = 'none';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < EMOJI_LIST.length; i++) {
+    html += '<button type="button" class="emoji-pick-item" onclick="selectEmoji(' + fieldIndex + ',\'' + EMOJI_LIST[i] + '\')">' + EMOJI_LIST[i] + '</button>';
+  }
+  picker.innerHTML = html;
+  picker.style.display = 'grid';
+}
+
+function selectEmoji(fieldIndex, emoji) {
+  var input = document.getElementById('prompt-field-' + fieldIndex);
+  if (input) input.value = emoji;
+  var picker = document.getElementById('emoji-picker-' + fieldIndex);
+  if (picker) picker.style.display = 'none';
 }
 
 function closePromptModal() {
@@ -6631,7 +6668,7 @@ async function addKanbanStatus() {
     [
       { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)', placeholder: currentLang === 'fr' ? 'Ex: À valider' : 'Ex: In review' },
       { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)', placeholder: currentLang === 'fr' ? 'Ex: To validate' : 'Ex: In review' },
-      { label: 'Emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
+      { label: 'Emoji', type: 'emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
       { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
     ],
     ['', '', '', '#8b5cf6']
@@ -6665,7 +6702,7 @@ async function editKanbanStatus(index) {
     [
       { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)' },
       { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)' },
-      { label: 'Emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
+      { label: 'Emoji', type: 'emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
       { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
     ],
     [s.label_fr, s.label_en, s.emoji || '', s.color || '#94a3b8']
