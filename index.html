@@ -555,6 +555,66 @@
       .settings-grid { grid-template-columns: 1fr; }
     }
 
+    /* ========== RACI TOGGLE ========== */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #cbd5e1;
+      border-radius: 24px;
+      transition: background 0.2s;
+    }
+    .toggle-slider:before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: #3b82f6;
+    }
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(20px);
+    }
+    body.dark-mode .toggle-slider {
+      background: #475569;
+    }
+    body.dark-mode .toggle-switch input:checked + .toggle-slider {
+      background: #60a5fa;
+    }
+
+    /* ========== RACI BADGES ========== */
+    .raci-badge {
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.3px;
+    }
+    .raci-r { background: #dbeafe !important; color: #2563eb !important; border: 1px solid #93c5fd !important; }
+    .raci-a { background: #fef3c7 !important; color: #d97706 !important; border: 1px solid #fcd34d !important; }
+    .raci-c { background: #f3e8ff !important; color: #9333ea !important; border: 1px solid #c084fc !important; }
+    .raci-i { background: #f1f5f9 !important; color: #64748b !important; border: 1px solid #cbd5e1 !important; }
+    body.dark-mode .raci-r { background: #1e3a5f !important; color: #93c5fd !important; border-color: #2563eb !important; }
+    body.dark-mode .raci-a { background: #451a03 !important; color: #fcd34d !important; border-color: #d97706 !important; }
+    body.dark-mode .raci-c { background: #3b0764 !important; color: #c084fc !important; border-color: #9333ea !important; }
+    body.dark-mode .raci-i { background: #1e293b !important; color: #94a3b8 !important; border-color: #475569 !important; }
+
     /* ========== SECURITY SECTION ========== */
     .security-summary {
       display: flex;
@@ -4139,6 +4199,19 @@
           <div id="card-display-settings" class="settings-content"></div>
         </div>
 
+        <!-- RACI SECTION -->
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <div>
+              <h3>📋 <span data-i18n="raciMode">Mode RACI</span></h3>
+              <p data-i18n="raciSubtitle">Activez la matrice RACI pour définir les rôles sur chaque tâche</p>
+            </div>
+          </div>
+          <div class="settings-content">
+            <div id="raci-toggle-container"></div>
+          </div>
+        </div>
+
         <!-- SECURITY SECTION -->
         <div class="settings-section" style="grid-column: 1 / -1;">
           <div class="settings-section-header">
@@ -4281,7 +4354,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=75"></script>
+  <script src="widget.js?v=76"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

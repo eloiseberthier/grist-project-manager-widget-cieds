@@ -270,6 +270,14 @@ var i18n = {
     mappingGuide: 'Consulter le guide complet du système de mapping',
     securityTitle: 'Sécurité du document',
     securitySubtitle: 'Protégez les tables PM_* avec des règles d\'accès Grist (ACL)',
+    raciMode: 'Mode RACI',
+    raciSubtitle: 'Activez la matrice RACI pour définir les rôles sur chaque tâche',
+    raciResponsible: 'Responsable (R)',
+    raciAccountable: 'Approbateur (A)',
+    raciConsulted: 'Consulté (C)',
+    raciInformed: 'Informé (I)',
+    raciEnabled: 'Mode RACI activé',
+    raciDisabled: 'Mode RACI désactivé',
     projectActive: 'Actif',
     projectCompleted: 'Terminé',
     projectArchived: 'Archivé',
@@ -542,6 +550,14 @@ var i18n = {
     mappingGuide: 'Read the complete mapping guide',
     securityTitle: 'Document security',
     securitySubtitle: 'Protect PM_* tables with Grist access rules (ACL)',
+    raciMode: 'RACI Mode',
+    raciSubtitle: 'Enable the RACI matrix to define roles on each task',
+    raciResponsible: 'Responsible (R)',
+    raciAccountable: 'Accountable (A)',
+    raciConsulted: 'Consulted (C)',
+    raciInformed: 'Informed (I)',
+    raciEnabled: 'RACI mode enabled',
+    raciDisabled: 'RACI mode disabled',
     projectActive: 'Active',
     projectCompleted: 'Completed',
     projectArchived: 'Archived',
@@ -632,6 +648,8 @@ async function saveCardDisplaySettings() {
   await saveSetting('card_display', JSON.stringify(cardDisplaySettings));
 }
 
+var raciEnabled = false;
+
 // PM_Settings helpers
 var _settingsCache = {};
 
@@ -650,6 +668,9 @@ async function loadSettings() {
     }
     if (_settingsCache.card_display) {
       try { cardDisplaySettings = Object.assign({}, defaultCardDisplay, JSON.parse(_settingsCache.card_display.value)); } catch (e) {}
+    }
+    if (_settingsCache.raci_enabled) {
+      raciEnabled = _settingsCache.raci_enabled.value === 'true';
     }
   } catch (e) {
     console.log('[GristPM] PM_Settings not available yet');
@@ -1585,6 +1606,17 @@ async function ensureTables() {
             ['AddColumn', TASKS_TABLE, 'Tag', { type: 'Text' }]
           ]);
         }
+        // RACI columns
+        var raciCols = ['Accountable', 'Consulted', 'Informed'];
+        var raciActions = [];
+        for (var rc = 0; rc < raciCols.length; rc++) {
+          if (existingCols.indexOf(raciCols[rc]) === -1) {
+            raciActions.push(['AddColumn', TASKS_TABLE, raciCols[rc], { type: 'Text' }]);
+          }
+        }
+        if (raciActions.length > 0) {
+          await grist.docApi.applyUserActions(raciActions);
+        }
       } catch (migrationErr) {
         console.log('Migration check completed or columns already exist');
       }
@@ -1682,7 +1714,11 @@ async function loadAllData() {
         task.Estimated_Hours = taskData[estimatedHoursCol] ? taskData[estimatedHoursCol][i] : 0;
         task.Created_At = taskData[createdAtCol] ? taskData[createdAtCol][i] : null;
         task.Project_Id = taskData[projectIdCol] ? taskData[projectIdCol][i] : null;
-        
+
+        task.Accountable = taskData.Accountable ? taskData.Accountable[i] || '' : '';
+        task.Consulted = taskData.Consulted ? taskData.Consulted[i] || '' : '';
+        task.Informed = taskData.Informed ? taskData.Informed[i] || '' : '';
+
         tasks.push(task);
       }
     }
@@ -3051,8 +3087,27 @@ function renderTaskCard(task) {
   if (cd.assignee && task.Assignee) {
     html += '<div class="task-card-row">';
     var assigneeList = task.Assignee.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
-    for (var ai = 0; ai < assigneeList.length; ai++) {
-      html += '<span class="task-card-assignee">👤 ' + sanitize(getUserDisplayName(assigneeList[ai])) + '</span>';
+    if (raciEnabled) {
+      for (var ai = 0; ai < assigneeList.length; ai++) {
+        html += '<span class="task-card-assignee raci-badge raci-r">R ' + sanitize(getUserDisplayName(assigneeList[ai])) + '</span>';
+      }
+      var raciRoles = [
+        { arr: task.Accountable, cls: 'raci-a', letter: 'A' },
+        { arr: task.Consulted,   cls: 'raci-c', letter: 'C' },
+        { arr: task.Informed,    cls: 'raci-i', letter: 'I' }
+      ];
+      for (var ri = 0; ri < raciRoles.length; ri++) {
+        if (raciRoles[ri].arr) {
+          var rList = raciRoles[ri].arr.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+          for (var rj = 0; rj < rList.length; rj++) {
+            html += '<span class="task-card-assignee raci-badge ' + raciRoles[ri].cls + '">' + raciRoles[ri].letter + ' ' + sanitize(getUserDisplayName(rList[rj])) + '</span>';
+          }
+        }
+      }
+    } else {
+      for (var ai2 = 0; ai2 < assigneeList.length; ai2++) {
+        html += '<span class="task-card-assignee">👤 ' + sanitize(getUserDisplayName(assigneeList[ai2])) + '</span>';
+      }
     }
     html += '</div>';
   }
@@ -4533,8 +4588,10 @@ async function deleteGroup(groupId) {
 // =============================================================================
 
 function openNewTaskModal(defaultStatus) {
-  // Reset assignees for new task
   editAssignees = [];
+  editAccountable = [];
+  editConsulted = [];
+  editInformed = [];
 
   var groupOptions = '<option value="">--</option>';
   for (var i = 0; i < groups.length; i++) {
@@ -4566,22 +4623,29 @@ function openNewTaskModal(defaultStatus) {
   html += '<div class="detail-field-value"><textarea id="task-desc" placeholder="' + t('fieldDescription') + '"></textarea></div>';
   html += '</div>';
 
-  // Assignees (multi)
-  html += '<div class="detail-field">';
-  html += '<span class="detail-field-icon">👤</span>';
-  html += '<span class="detail-field-label">' + t('fieldAssignee') + '</span>';
-  html += '<div class="detail-field-value">';
-  html += '<div class="assignee-chips" id="assignee-chips"></div>';
-  html += '<div class="assignee-add-row">';
-  html += '<select id="assignee-select">';
-  html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
-  for (var i = 0; i < users.length; i++) {
-    html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
+  // Assignees (multi) — or RACI roles
+  if (raciEnabled) {
+    html += renderRaciField('R', t('raciResponsible'), 'assignee', 'editAssignees');
+    html += renderRaciField('A', t('raciAccountable'), 'accountable', 'editAccountable');
+    html += renderRaciField('C', t('raciConsulted'), 'consulted', 'editConsulted');
+    html += renderRaciField('I', t('raciInformed'), 'informed', 'editInformed');
+  } else {
+    html += '<div class="detail-field">';
+    html += '<span class="detail-field-icon">👤</span>';
+    html += '<span class="detail-field-label">' + t('fieldAssignee') + '</span>';
+    html += '<div class="detail-field-value">';
+    html += '<div class="assignee-chips" id="assignee-chips"></div>';
+    html += '<div class="assignee-add-row">';
+    html += '<select id="assignee-select">';
+    html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
+    for (var i = 0; i < users.length; i++) {
+      html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
+    }
+    html += '</select>';
+    html += '<button class="assignee-add-btn" onclick="addRaciChip(\'editAssignees\',\'assignee\')">' + t('addAssignee') + '</button>';
+    html += '</div>';
+    html += '</div></div>';
   }
-  html += '</select>';
-  html += '<button class="assignee-add-btn" onclick="addAssigneeChip(0)">' + t('addAssignee') + '</button>';
-  html += '</div>';
-  html += '</div></div>';
 
   // Status + Priority
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
@@ -4680,14 +4744,19 @@ function openNewTaskModal(defaultStatus) {
 }
 
 var editAssignees = [];
+var editAccountable = [];
+var editConsulted = [];
+var editInformed = [];
 
 function openEditTaskModal(taskId, preserveAssignees) {
   var task = tasks.find(function(t) { return t.id === taskId; });
   if (!task) return;
-  
-  // Only reset assignees if not preserving
+
   if (!preserveAssignees) {
     editAssignees = task.Assignee ? task.Assignee.split(',').map(function(a) { return a.trim(); }).filter(Boolean) : [];
+    editAccountable = task.Accountable ? task.Accountable.split(',').map(function(a) { return a.trim(); }).filter(Boolean) : [];
+    editConsulted = task.Consulted ? task.Consulted.split(',').map(function(a) { return a.trim(); }).filter(Boolean) : [];
+    editInformed = task.Informed ? task.Informed.split(',').map(function(a) { return a.trim(); }).filter(Boolean) : [];
   }
 
   var groupOptions = '<option value="">--</option>';
@@ -4730,24 +4799,31 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '<div class="detail-field-value"><textarea id="task-desc" placeholder="' + t('fieldDescription') + '">' + sanitize(task.Description) + '</textarea></div>';
   html += '</div>';
 
-  // Assignees (multi)
-  html += '<div class="detail-field">';
-  html += '<span class="detail-field-icon">👤</span>';
-  html += '<span class="detail-field-label">' + t('fieldAssignee') + '</span>';
-  html += '<div class="detail-field-value">';
-  html += '<div class="assignee-chips" id="assignee-chips">';
-  html += renderAssigneeChips();
-  html += '</div>';
-  html += '<div class="assignee-add-row">';
-  html += '<select id="assignee-select">';
-  html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
-  for (var i = 0; i < users.length; i++) {
-    html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
+  // Assignees (multi) — or RACI roles
+  if (raciEnabled) {
+    html += renderRaciField('R', t('raciResponsible'), 'assignee', 'editAssignees');
+    html += renderRaciField('A', t('raciAccountable'), 'accountable', 'editAccountable');
+    html += renderRaciField('C', t('raciConsulted'), 'consulted', 'editConsulted');
+    html += renderRaciField('I', t('raciInformed'), 'informed', 'editInformed');
+  } else {
+    html += '<div class="detail-field">';
+    html += '<span class="detail-field-icon">👤</span>';
+    html += '<span class="detail-field-label">' + t('fieldAssignee') + '</span>';
+    html += '<div class="detail-field-value">';
+    html += '<div class="assignee-chips" id="assignee-chips">';
+    html += renderRaciChips('editAssignees');
+    html += '</div>';
+    html += '<div class="assignee-add-row">';
+    html += '<select id="assignee-select">';
+    html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
+    for (var i = 0; i < users.length; i++) {
+      html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
+    }
+    html += '</select>';
+    html += '<button class="assignee-add-btn" onclick="addRaciChip(\'editAssignees\',\'assignee\')">' + t('addAssignee') + '</button>';
+    html += '</div>';
+    html += '</div></div>';
   }
-  html += '</select>';
-  html += '<button class="assignee-add-btn" onclick="addAssigneeChip(' + task.id + ')">' + t('addAssignee') + '</button>';
-  html += '</div>';
-  html += '</div></div>';
 
   // Status
   html += '<div class="detail-field">';
@@ -5199,36 +5275,75 @@ function openEditTaskModal(taskId, preserveAssignees) {
   document.getElementById('modal-container').innerHTML = html;
 }
 
-function renderAssigneeChips() {
+function getRaciArray(varName) {
+  if (varName === 'editAssignees') return editAssignees;
+  if (varName === 'editAccountable') return editAccountable;
+  if (varName === 'editConsulted') return editConsulted;
+  if (varName === 'editInformed') return editInformed;
+  return [];
+}
+
+function renderRaciChips(varName) {
+  var arr = getRaciArray(varName);
   var html = '';
-  for (var i = 0; i < editAssignees.length; i++) {
-    var name = editAssignees[i];
+  for (var i = 0; i < arr.length; i++) {
+    var name = arr[i];
     var displayName = name;
-    // Try to find user name from email
     for (var j = 0; j < users.length; j++) {
       if (users[j].Email === name || users[j].Name === name) {
         displayName = users[j].Name || users[j].Email;
         break;
       }
     }
-    html += '<span class="assignee-chip-tag">' + sanitize(displayName) + ' <span class="chip-remove" onclick="removeAssigneeChip(' + i + ')">✕</span></span>';
+    html += '<span class="assignee-chip-tag">' + sanitize(displayName) + ' <span class="chip-remove" onclick="removeRaciChip(\'' + varName + '\',' + i + ',\'' + varName.replace('edit', '').toLowerCase() + '\')">✕</span></span>';
   }
   return html;
 }
 
-function addAssigneeChip() {
-  var sel = document.getElementById('assignee-select');
+function renderRaciField(letter, label, selectSuffix, varName) {
+  var raciColors = { R: '#3b82f6', A: '#f59e0b', C: '#8b5cf6', I: '#64748b' };
+  var color = raciColors[letter] || '#94a3b8';
+  var html = '<div class="detail-field">';
+  html += '<span class="detail-field-icon" style="background:' + color + ';color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;">' + letter + '</span>';
+  html += '<span class="detail-field-label">' + label + '</span>';
+  html += '<div class="detail-field-value">';
+  html += '<div class="assignee-chips" id="' + selectSuffix + '-chips">';
+  html += renderRaciChips(varName);
+  html += '</div>';
+  html += '<div class="assignee-add-row">';
+  html += '<select id="' + selectSuffix + '-select">';
+  html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
+  for (var i = 0; i < users.length; i++) {
+    html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
+  }
+  html += '</select>';
+  html += '<button class="assignee-add-btn" onclick="addRaciChip(\'' + varName + '\',\'' + selectSuffix + '\')">' + t('addAssignee') + '</button>';
+  html += '</div>';
+  html += '</div></div>';
+  return html;
+}
+
+function addRaciChip(varName, selectSuffix) {
+  var sel = document.getElementById(selectSuffix + '-select');
+  var arr = getRaciArray(varName);
   var val = sel.value;
-  if (!val || editAssignees.indexOf(val) !== -1) return;
-  editAssignees.push(val);
-  document.getElementById('assignee-chips').innerHTML = renderAssigneeChips();
+  if (!val || arr.indexOf(val) !== -1) return;
+  arr.push(val);
+  var container = document.getElementById(selectSuffix + '-chips');
+  if (container) container.innerHTML = renderRaciChips(varName);
   sel.value = '';
 }
 
-function removeAssigneeChip(index) {
-  editAssignees.splice(index, 1);
-  document.getElementById('assignee-chips').innerHTML = renderAssigneeChips();
+function removeRaciChip(varName, index, selectSuffix) {
+  var arr = getRaciArray(varName);
+  arr.splice(index, 1);
+  var container = document.getElementById(selectSuffix + '-chips') || document.getElementById(varName.replace('edit', '').toLowerCase() + '-chips');
+  if (container) container.innerHTML = renderRaciChips(varName);
 }
+
+function renderAssigneeChips() { return renderRaciChips('editAssignees'); }
+function addAssigneeChip() { addRaciChip('editAssignees', 'assignee'); }
+function removeAssigneeChip(index) { removeRaciChip('editAssignees', index, 'assignee'); }
 
 function openSubtaskDepModal(subtaskId, taskId) {
   var subtask = subtasks.find(function(st) { return st.id === subtaskId; });
@@ -5316,6 +5431,9 @@ async function addSubtask(parentTaskId) {
 
   // Save current form state before reload
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
 
   var taskSubtasks = getTaskSubtasks(parentTaskId);
   var maxOrder = taskSubtasks.length > 0 ? Math.max.apply(null, taskSubtasks.map(function(st) { return st.Order || 0; })) : 0;
@@ -5334,6 +5452,9 @@ async function addSubtask(parentTaskId) {
     input.value = '';
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
     if (newStId) {
       setTimeout(function() { startEditSubtask(newStId); }, 100);
@@ -5346,6 +5467,9 @@ async function addSubtask(parentTaskId) {
 
 async function toggleSubtask(subtaskId, completed) {
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
   try {
     // Sync Completed boolean AND Status field
     var newStatus = completed ? 'done' : 'todo';
@@ -5363,6 +5487,9 @@ async function toggleSubtask(subtaskId, completed) {
     var subtask = subtasks.find(function(st) { return st.id === subtaskId; });
     if (subtask) {
       editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
       openEditTaskModal(subtask.Parent_Task_Id, true);
     }
   } catch (e) {
@@ -5372,6 +5499,9 @@ async function toggleSubtask(subtaskId, completed) {
 
 async function deleteSubtask(subtaskId, parentTaskId) {
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', SUBTASKS_TABLE, subtaskId]
@@ -5379,6 +5509,9 @@ async function deleteSubtask(subtaskId, parentTaskId) {
     showToast(t('subtaskDeleted'), 'info');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
   } catch (e) {
     console.error('Error deleting subtask:', e);
@@ -5443,11 +5576,17 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   if (newStartDate) fields.Start_Date = newStartDate;
   if (newDueDate) fields.Due_Date = newDueDate;
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
   try {
     await grist.docApi.applyUserActions([['UpdateRecord', SUBTASKS_TABLE, subtaskId, fields]]);
     showToast(t('subtaskSaved'), 'success');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
   } catch (e) {
     console.error('Error saving subtask:', e);
@@ -5483,8 +5622,14 @@ async function generateSubtaskOccurrences(subtaskId, parentTaskId) {
     await grist.docApi.applyUserActions(actions);
     showToast((currentLang === 'fr' ? count + ' occurrence(s) créée(s)' : count + ' occurrence(s) created'), 'success');
     var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
   } catch (e) {
     console.error('Error generating subtask occurrences:', e);
@@ -5501,6 +5646,9 @@ async function addDependency(taskId) {
   var dependsOnId = parseInt(select.value);
   if (!dependsOnId) return;
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
 
   try {
     await grist.docApi.applyUserActions([
@@ -5513,6 +5661,9 @@ async function addDependency(taskId) {
     showToast(t('dependencyAdded'), 'success');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(taskId, true);
   } catch (e) {
     console.error('Error adding dependency:', e);
@@ -5526,6 +5677,9 @@ async function removeDependency(taskId, dependsOnTaskId) {
   });
   if (!dep) return;
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
 
   try {
     await grist.docApi.applyUserActions([
@@ -5534,6 +5688,9 @@ async function removeDependency(taskId, dependsOnTaskId) {
     showToast(t('dependencyRemoved'), 'info');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(taskId, true);
   } catch (e) {
     console.error('Error removing dependency:', e);
@@ -5549,6 +5706,9 @@ async function addComment(taskId) {
   var content = textarea.value.trim();
   if (!content) return;
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
 
   try {
     await grist.docApi.applyUserActions([
@@ -5563,6 +5723,9 @@ async function addComment(taskId) {
     showToast(t('commentAdded'), 'success');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(taskId, true);
   } catch (e) {
     console.error('Error adding comment:', e);
@@ -5573,6 +5736,9 @@ async function addComment(taskId) {
 async function deleteComment(commentId, taskId) {
   if (!isOwner) return;
   var savedAssignees = editAssignees.slice();
+  var savedAccountable = editAccountable.slice();
+  var savedConsulted = editConsulted.slice();
+  var savedInformed = editInformed.slice();
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', COMMENTS_TABLE, commentId]
@@ -5580,6 +5746,9 @@ async function deleteComment(commentId, taskId) {
     showToast(t('commentDeleted'), 'info');
     await loadAllData();
     editAssignees = savedAssignees;
+    editAccountable = savedAccountable;
+    editConsulted = savedConsulted;
+    editInformed = savedInformed;
     openEditTaskModal(taskId, true);
   } catch (e) {
     console.error('Error deleting comment:', e);
@@ -6008,6 +6177,11 @@ async function createTask() {
   setField(record, 'tasks', 'status', document.getElementById('task-status').value);
   setField(record, 'tasks', 'priority', document.getElementById('task-priority').value);
   setField(record, 'tasks', 'assignee', editAssignees.join(', '));
+  if (raciEnabled) {
+    record.Accountable = editAccountable.join(', ');
+    record.Consulted = editConsulted.join(', ');
+    record.Informed = editInformed.join(', ');
+  }
   setField(record, 'tasks', 'group', document.getElementById('task-group').value);
   setField(record, 'tasks', 'startDate', toEpoch(document.getElementById('task-start').value));
   setField(record, 'tasks', 'dueDate', toEpoch(document.getElementById('task-due').value));
@@ -6065,6 +6239,11 @@ async function updateTask(taskId) {
   setField(record, 'tasks', 'status', newStatus);
   setField(record, 'tasks', 'priority', document.getElementById('task-priority').value);
   setField(record, 'tasks', 'assignee', editAssignees.join(', '));
+  if (raciEnabled) {
+    record.Accountable = editAccountable.join(', ');
+    record.Consulted = editConsulted.join(', ');
+    record.Informed = editInformed.join(', ');
+  }
   setField(record, 'tasks', 'group', document.getElementById('task-group').value);
   setField(record, 'tasks', 'startDate', toEpoch(document.getElementById('task-start').value));
   setField(record, 'tasks', 'dueDate', toEpoch(document.getElementById('task-due').value));
@@ -6685,6 +6864,7 @@ function renderSettingsView() {
   renderSettingsTagsList();
   renderCardDisplaySettings();
   renderKanbanStatusesList();
+  renderRaciToggle();
   renderSecuritySection();
 }
 
@@ -7082,6 +7262,32 @@ async function removeSecurityRules() {
     console.error('[GristPM] Error removing security rules:', e);
     showToast((currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + e.message, 'error');
   }
+}
+
+function renderRaciToggle() {
+  var container = document.getElementById('raci-toggle-container');
+  if (!container) return;
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">';
+  html += '<div>';
+  html += '<span style="font-size:13px;font-weight:600;">' + t(raciEnabled ? 'raciEnabled' : 'raciDisabled') + '</span>';
+  html += '<p style="font-size:12px;color:#94a3b8;margin:2px 0 0;">' +
+    (currentLang === 'fr'
+      ? 'Responsable · Approbateur · Consulté · Informé'
+      : 'Responsible · Accountable · Consulted · Informed') + '</p>';
+  html += '</div>';
+  html += '<label class="toggle-switch">';
+  html += '<input type="checkbox" ' + (raciEnabled ? 'checked' : '') + ' onchange="toggleRaci(this.checked)">';
+  html += '<span class="toggle-slider"></span>';
+  html += '</label>';
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function toggleRaci(enabled) {
+  raciEnabled = enabled;
+  await saveSetting('raci_enabled', enabled ? 'true' : 'false');
+  renderRaciToggle();
+  showToast(t(enabled ? 'raciEnabled' : 'raciDisabled'), 'success');
 }
 
 async function renderSecuritySection() {
