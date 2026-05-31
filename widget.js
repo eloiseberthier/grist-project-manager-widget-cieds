@@ -8089,15 +8089,11 @@ if (!isInsideGrist()) {
   (async function() {
     await grist.ready({ requiredAccess: 'full' });
 
-    // Detect current user access level
-    // Only owners can call getAccessRules — if it fails, user is not owner
     try {
       await grist.docApi.getAccessRules();
       isOwner = true;
     } catch (e) {
-      // For custom widgets, getAccessRules may not be available
-      // Default to owner (full access was granted)
-      isOwner = true;
+      isOwner = false;
     }
 
     loadDarkModePreference();
