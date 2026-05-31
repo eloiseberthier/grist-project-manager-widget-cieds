@@ -8090,7 +8090,7 @@ if (!isInsideGrist()) {
     await grist.ready({ requiredAccess: 'full' });
 
     try {
-      await grist.docApi.getAccessRules();
+      await grist.docApi.fetchTable('_grist_ACLRules');
       isOwner = true;
     } catch (e) {
       isOwner = false;
