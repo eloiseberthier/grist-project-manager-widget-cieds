@@ -2779,7 +2779,7 @@ function renderKanbanView() {
     columns = statuses.map(function(s) {
       return {
         key: s.key,
-        label: currentLang === 'fr' ? s.label_fr : s.label_en,
+        label: (s.emoji ? s.emoji + ' ' : '') + (currentLang === 'fr' ? s.label_fr : s.label_en),
         cssClass: s.cssClass || 'col-custom',
         field: 'Status',
         color: s.color
@@ -3046,6 +3046,13 @@ async function onDrop(e) {
 // TABLE VIEW
 // =============================================================================
 
+var tableSortField = null;
+var tableSortAsc = true;
+function sortTable(field) {
+  if (tableSortField === field) { tableSortAsc = !tableSortAsc; }
+  else { tableSortField = field; tableSortAsc = true; }
+  renderTableView();
+}
 function renderTableView() {
   var filterStatusEl = document.getElementById('filter-status');
   if (filterStatusEl && filterStatusEl.options.length <= 1) {
@@ -3071,15 +3078,37 @@ function renderTableView() {
     return true;
   });
 
+  if (tableSortField) {
+    var dir = tableSortAsc ? 1 : -1;
+    filtered.sort(function(a, b) {
+      var va, vb;
+      switch (tableSortField) {
+        case 'Title': va = (a.Title || '').toLowerCase(); vb = (b.Title || '').toLowerCase(); break;
+        case 'Project': va = getProjectName(a.Project_Id).toLowerCase(); vb = getProjectName(b.Project_Id).toLowerCase(); break;
+        case 'Status': va = a.Status || ''; vb = b.Status || ''; break;
+        case 'Priority': var po = {high:0,medium:1,low:2}; va = po[a.Priority] !== undefined ? po[a.Priority] : 3; vb = po[b.Priority] !== undefined ? po[b.Priority] : 3; break;
+        case 'Assignee': va = (a.Assignee || '').toLowerCase(); vb = (b.Assignee || '').toLowerCase(); break;
+        case 'Start_Date': va = a.Start_Date || 0; vb = b.Start_Date || 0; break;
+        case 'Due_Date': va = a.Due_Date || 0; vb = b.Due_Date || 0; break;
+        default: va = ''; vb = '';
+      }
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  function sortIcon(field) { return tableSortField === field ? (tableSortAsc ? ' ▲' : ' ▼') : ' ⇅'; }
+  var thStyle = 'cursor:pointer;user-select:none;';
   var html = '<table class="data-table">';
   html += '<thead><tr>';
-  html += '<th>' + t('colTaskName') + '</th>';
-  html += '<th>' + (currentLang === 'fr' ? 'Projet' : 'Project') + '</th>';
-  html += '<th>' + t('colStatus') + '</th>';
-  html += '<th>' + t('colPriority') + '</th>';
-  html += '<th>' + t('colAssignee') + '</th>';
-  html += '<th>' + t('colStartDate') + '</th>';
-  html += '<th>' + t('colDueDate') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Title\')">' + t('colTaskName') + sortIcon('Title') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Project\')">' + (currentLang === 'fr' ? 'Projet' : 'Project') + sortIcon('Project') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Status\')">' + t('colStatus') + sortIcon('Status') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Priority\')">' + t('colPriority') + sortIcon('Priority') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Assignee\')">' + t('colAssignee') + sortIcon('Assignee') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Start_Date\')">' + t('colStartDate') + sortIcon('Start_Date') + '</th>';
+  html += '<th style="' + thStyle + '" onclick="sortTable(\'Due_Date\')">' + t('colDueDate') + sortIcon('Due_Date') + '</th>';
   html += '<th>' + t('colActions') + '</th>';
   html += '</tr></thead><tbody>';
 
@@ -3121,7 +3150,7 @@ function renderTableView() {
     // Subtasks rows (hidden by default)
     for (var si = 0; si < taskSubtasks.length; si++) {
       var st = taskSubtasks[si];
-      html += '<tr class="subtask-row" data-parent="' + task.id + '" style="display:none;">';
+      html += '<tr class="subtask-row clickable-row" data-parent="' + task.id + '" style="display:none;cursor:pointer;" onclick="openEditTaskModal(' + task.id + ', true); setTimeout(function(){startEditSubtask(' + st.id + ')},100);">';
       var stStatus = st.Status || (st.Completed ? 'done' : 'todo');
       var stStatusLabel = stStatus === 'done' ? t('statusDone') : (stStatus === 'progress' ? t('statusProgress') : t('statusTodo'));
       html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span><span class="st-status-badge ' + stStatus + '" style="margin-left:8px;">' + stStatusLabel + '</span></div></td>';
@@ -3398,7 +3427,7 @@ function renderGanttView() {
         if (wi === barStartIdx) {
           var spanCols = barEndIdx - barStartIdx + 1;
           var widthPx = spanCols * 80;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title).substring(0, 20) + '</div>';
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
         html += '</td>';
       }
@@ -3426,7 +3455,7 @@ function renderGanttView() {
             if (wi2 === stStartIdx) {
               var stSpan = stEndIdx - stStartIdx + 1;
               var stWidth = stSpan * 80;
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title).substring(0, 18) + '</div>';
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title) + '</div>';
             }
             html += '</td>';
           }
@@ -3503,7 +3532,7 @@ function renderGanttView() {
         if (inRange) {
           var barLeft = mTStart > monthStart ? Math.round((mTStart.getDate() - 1) / daysInMonth * 100) : 0;
           var barRight = mTEnd < monthEnd ? Math.round((daysInMonth - mTEnd.getDate()) / daysInMonth * 100) : 0;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:' + barLeft + '%;right:' + barRight + '%;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + (barLeft === 0 && barRight === 0 ? sanitize(task.Title).substring(0, 10) : '') + '</div>';
+          html += '<div class="gantt-bar ' + barClass + '" style="left:' + barLeft + '%;right:' + barRight + '%;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + (barLeft === 0 && barRight === 0 ? sanitize(task.Title) : '') + '</div>';
         }
         html += '</td>';
       }
@@ -3613,7 +3642,7 @@ function renderGanttView() {
       if (di === barStartIdx) {
         var spanDays = barEndIdx - barStartIdx + 1;
         var widthPx = spanDays * 36;
-        html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title).substring(0, 12) + '</div>';
+        html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
       }
       html += '</td>';
     }
@@ -3647,7 +3676,7 @@ function renderGanttView() {
           if (di2 === stBarStartIdx) {
             var stSpanDays = stBarEndIdx - stBarStartIdx + 1;
             var stWidth = stSpanDays * 36;
-            html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title).substring(0, 12) + '</div>';
+            html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title) + '</div>';
           }
           html += '</td>';
         }
@@ -4744,8 +4773,10 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '</div>';
       // Assignee + date + hours row
       html += '<div class="st-meta-row">';
+      var stStartDateInput = st.Start_Date ? new Date(st.Start_Date * 1000).toISOString().split('T')[0] : '';
       html += '<select id="st-assignee-' + st.id + '" style="flex:1;min-width:100px;">' + userOptions + '</select>';
-      html += '<input type="date" class="subtask-edit-date" id="st-due-' + st.id + '" value="' + stDueDateInput + '">';
+      html += '<input type="date" class="subtask-edit-date" id="st-start-' + st.id + '" value="' + stStartDateInput + '" title="' + (currentLang === 'fr' ? 'Date début' : 'Start date') + '">';
+      html += '<input type="date" class="subtask-edit-date" id="st-due-' + st.id + '" value="' + stDueDateInput + '" title="' + (currentLang === 'fr' ? 'Échéance' : 'Due date') + '">';
       html += '<input type="number" class="st-hours-input" id="st-hours-' + st.id + '" value="' + (st.Estimated_Hours || '') + '" placeholder="' + (currentLang === 'fr' ? 'Heures' : 'Hours') + '" min="0" step="0.5">';
       html += '</div>';
       // Recurrence
@@ -5145,7 +5176,7 @@ async function addSubtask(parentTaskId) {
   var maxOrder = taskSubtasks.length > 0 ? Math.max.apply(null, taskSubtasks.map(function(st) { return st.Order || 0; })) : 0;
 
   try {
-    await grist.docApi.applyUserActions([
+    var stResult = await grist.docApi.applyUserActions([
       ['AddRecord', SUBTASKS_TABLE, null, {
         Parent_Task_Id: parentTaskId,
         Title: title,
@@ -5154,11 +5185,14 @@ async function addSubtask(parentTaskId) {
         Created_At: Math.floor(Date.now() / 1000)
       }]
     ]);
+    var newStId = (stResult && stResult.retValues && stResult.retValues[0]) || null;
     input.value = '';
     await loadAllData();
-    // Restore assignees and reopen modal
     editAssignees = savedAssignees;
     openEditTaskModal(parentTaskId, true);
+    if (newStId) {
+      setTimeout(function() { startEditSubtask(newStId); }, 100);
+    }
   } catch (e) {
     console.error('Error adding subtask:', e);
     showToast('Error: ' + e.message, 'error');
@@ -5240,6 +5274,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var statusSel     = document.getElementById('st-status-'   + subtaskId);
   var prioritySel   = document.getElementById('st-priority-' + subtaskId);
   var assigneeSelect= document.getElementById('st-assignee-' + subtaskId);
+  var startDateInput= document.getElementById('st-start-'    + subtaskId);
   var dueDateInput  = document.getElementById('st-due-'      + subtaskId);
   var hoursInput    = document.getElementById('st-hours-'    + subtaskId);
   var recurSel      = document.getElementById('st-recur-'    + subtaskId);
@@ -5247,6 +5282,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var newTitle = titleInput.value.trim();
   if (!newTitle) return;
   var newAssignee = assigneeSelect ? assigneeSelect.value : '';
+  var newStartDate = startDateInput && startDateInput.value ? Math.floor(new Date(startDateInput.value).getTime() / 1000) : null;
   var newDueDate = dueDateInput && dueDateInput.value ? Math.floor(new Date(dueDateInput.value).getTime() / 1000) : null;
   var newStatus = statusSel ? statusSel.value : 'todo';
   var fields = {
@@ -5259,6 +5295,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
     Estimated_Hours: hoursInput && hoursInput.value ? parseFloat(hoursInput.value) : null,
     Recurrence: recurSel ? recurSel.value : 'none'
   };
+  if (newStartDate) fields.Start_Date = newStartDate;
   if (newDueDate) fields.Due_Date = newDueDate;
   var savedAssignees = editAssignees.slice();
   try {
@@ -5840,12 +5877,16 @@ async function createTask() {
   }
 
   try {
-    await grist.docApi.applyUserActions([
+    var createResult = await grist.docApi.applyUserActions([
       ['AddRecord', TASKS_TABLE, null, record]
     ]);
+    var newTaskId = (createResult && createResult.retValues && createResult.retValues[0]) || null;
     showToast(t('taskCreated'), 'success');
     closeModalForce();
     await loadAllData();
+    if (newTaskId) {
+      openEditTaskModal(newTaskId);
+    }
   } catch (e) {
     console.error('Error creating task:', e);
     showToast('Error: ' + e.message, 'error');
@@ -6025,13 +6066,11 @@ async function useTemplate(tplId) {
 // =============================================================================
 
 function applyOwnerRestrictions() {
-  // Hide Team tab for non-owners
-  var teamTab = document.querySelector('[data-tab="team"]');
-  if (teamTab) teamTab.style.display = isOwner ? '' : 'none';
-
-  // Hide "Nouveau modèle" button in Templates tab for non-owners
-  var templatesAddBtn = document.querySelector('#tab-templates .btn-new-task');
-  if (templatesAddBtn) templatesAddBtn.style.display = isOwner ? '' : 'none';
+  var managerTabs = ['team', 'templates', 'stats', 'settings'];
+  managerTabs.forEach(function(tab) {
+    var el = document.querySelector('[data-tab="' + tab + '"]');
+    if (el) el.style.display = isOwner ? '' : 'none';
+  });
 }
 
 // =============================================================================
@@ -6585,14 +6624,16 @@ async function addKanbanStatus() {
     [
       { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)', placeholder: currentLang === 'fr' ? 'Ex: À valider' : 'Ex: In review' },
       { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)', placeholder: currentLang === 'fr' ? 'Ex: To validate' : 'Ex: In review' },
+      { label: 'Emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
       { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
     ],
-    ['', '', '#8b5cf6']
+    ['', '', '', '#8b5cf6']
   );
   if (!result || !result[0]) return;
   var labelFr = result[0].trim();
   var labelEn = (result[1] || '').trim() || labelFr;
-  var color = result[2] || '#8b5cf6';
+  var emoji = (result[2] || '').trim();
+  var color = result[3] || '#8b5cf6';
   var key = labelFr.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
   if (!key) return;
   var existing = getKanbanStatuses();
@@ -6601,7 +6642,7 @@ async function addKanbanStatus() {
     return;
   }
   ensureCustomStatuses();
-  customKanbanStatuses.push({ key: key, label_fr: labelFr, label_en: labelEn, color: color, cssClass: 'col-custom' });
+  customKanbanStatuses.push({ key: key, label_fr: labelFr, label_en: labelEn, color: color, emoji: emoji, cssClass: 'col-custom' });
   await saveKanbanStatuses();
   renderKanbanStatusesList();
   renderKanbanView();
@@ -6617,14 +6658,16 @@ async function editKanbanStatus(index) {
     [
       { label: currentLang === 'fr' ? 'Nom (FR)' : 'Name (FR)' },
       { label: currentLang === 'fr' ? 'Nom (EN)' : 'Name (EN)' },
+      { label: 'Emoji', placeholder: currentLang === 'fr' ? 'Ex: ✅ 🔍 📋' : 'Ex: ✅ 🔍 📋' },
       { label: currentLang === 'fr' ? 'Couleur' : 'Color', type: 'color' }
     ],
-    [s.label_fr, s.label_en, s.color || '#94a3b8']
+    [s.label_fr, s.label_en, s.emoji || '', s.color || '#94a3b8']
   );
   if (!result || !result[0]) return;
   customKanbanStatuses[index].label_fr = result[0].trim();
   customKanbanStatuses[index].label_en = (result[1] || '').trim() || result[0].trim();
-  customKanbanStatuses[index].color = result[2] || s.color;
+  customKanbanStatuses[index].emoji = (result[2] || '').trim();
+  customKanbanStatuses[index].color = result[3] || s.color;
   await saveKanbanStatuses();
   renderKanbanStatusesList();
   renderKanbanView();
