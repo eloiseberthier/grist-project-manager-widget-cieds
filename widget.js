@@ -950,11 +950,13 @@ function isTaskBlocked(taskId) {
 
 var confirmResolve = null;
 
-function showConfirmModal(message, title) {
+function showConfirmModal(message, title, okLabel) {
   return new Promise(function(resolve) {
     confirmResolve = resolve;
     document.getElementById('confirm-modal-title').textContent = title || (currentLang === 'fr' ? 'Confirmation' : 'Confirmation');
     document.getElementById('confirm-modal-message').textContent = message;
+    var okBtn = document.getElementById('confirm-modal-ok');
+    if (okBtn) okBtn.textContent = okLabel || (currentLang === 'fr' ? 'Supprimer' : 'Delete');
     document.getElementById('confirm-modal').style.display = 'flex';
   });
 }
@@ -6805,7 +6807,8 @@ async function applySecurityRules() {
     currentLang === 'fr'
       ? 'Cela va créer des règles d\'accès (ACL) pour protéger les tables PM_*. Les owners garderont tous les droits. Les éditeurs pourront créer et modifier les tâches mais pas les supprimer ni modifier les paramètres. Le document sera rechargé automatiquement.'
       : 'This will create access rules (ACL) to protect PM_* tables. Owners keep full rights. Editors can create and edit tasks but cannot delete them or modify settings. The document will reload automatically.',
-    currentLang === 'fr' ? 'Sécuriser le document' : 'Secure document'
+    currentLang === 'fr' ? 'Sécuriser le document' : 'Secure document',
+    currentLang === 'fr' ? 'Confirmer' : 'Confirm'
   );
   if (!confirmed) return;
 
@@ -6899,7 +6902,8 @@ async function removeSecurityRules() {
     currentLang === 'fr'
       ? 'Cela va supprimer toutes les règles d\'accès créées par le widget sur les tables PM_*. Le document sera rechargé automatiquement.'
       : 'This will remove all access rules created by the widget on PM_* tables. The document will reload automatically.',
-    currentLang === 'fr' ? 'Retirer la sécurité' : 'Remove security'
+    currentLang === 'fr' ? 'Retirer la sécurité' : 'Remove security',
+    currentLang === 'fr' ? 'Confirmer' : 'Confirm'
   );
   if (!confirmed) return;
 
