@@ -1018,14 +1018,77 @@ function submitPromptModal() {
   }
 }
 
-var EMOJI_LIST = [
-  '💡','✅','🔍','📋','🚀','⏳','🎯','🔥','⭐','📌',
-  '🏗️','📝','🧪','🐛','✏️','📊','🔒','🔓','💬','📎',
-  '🎨','⚙️','📦','🗂️','🏷️','📅','⏰','🔔','💎','🌟',
-  '✨','❌','⚠️','🛑','🟢','🟡','🔴','🔵','🟣','🟠',
-  '👤','👥','🏠','📱','💻','🌐','📈','📉','🔧','🛠️',
-  '❤️','👍','👎','🎉','💪','🤔','📣','🏆','🎁','🔑'
+var EMOJI_CATEGORIES = [
+  { icon: '😀', label: 'Smileys', emojis: [
+    '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊',
+    '😇','🥰','😍','🤩','😘','😗','😋','😛','😜','🤪',
+    '😎','🤓','🧐','😏','😒','😞','😔','😟','😕','🙁',
+    '😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡',
+    '🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻',
+    '👽','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾'
+  ]},
+  { icon: '👋', label: 'Gestes', emojis: [
+    '👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞',
+    '🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍',
+    '👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝',
+    '🙏','✍️','💅','🤳','💪','🦾','👀','👁️','👤','👥'
+  ]},
+  { icon: '🐾', label: 'Animaux', emojis: [
+    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
+    '🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔',
+    '🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴',
+    '🦄','🐝','🐛','🦋','🐌','🐞','🐜','🪲','🐢','🐍',
+    '🦎','🐙','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊'
+  ]},
+  { icon: '🌿', label: 'Nature', emojis: [
+    '🌸','💐','🌷','🌹','🥀','🌺','🌻','🌼','🌱','🌲',
+    '🌳','🌴','🌵','🍀','☘️','🍁','🍂','🍃','🪴','🌍',
+    '🌎','🌏','🌑','🌒','🌓','🌔','🌕','🌙','⭐','🌟',
+    '✨','⚡','☀️','🌤️','⛅','🌧️','🌈','❄️','🔥','💧'
+  ]},
+  { icon: '🍕', label: 'Nourriture', emojis: [
+    '🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍒',
+    '🍑','🥭','🍍','🥥','🥝','🍅','🥑','🍆','🥔','🥕',
+    '🌽','🌶️','🫑','🥒','🥬','🥦','🧄','🧅','🍄','🥜',
+    '🍞','🥐','🥖','🧀','🍖','🍗','🥩','🌭','🍔','🍟',
+    '🍕','🌮','🍣','🍩','🍪','🎂','🍰','☕','🍵','🧃'
+  ]},
+  { icon: '⚽', label: 'Activités', emojis: [
+    '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱',
+    '🏓','🏸','🏒','🥅','⛳','🏹','🎣','🤿','🥊','🥋',
+    '🏋️','🤸','⛷️','🏂','🏄','🚴','🏇','🧗','🎪','🎭',
+    '🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸',
+    '🎮','🎲','♟️','🧩','🎯','🎳','🎰','🏆','🥇','🎉'
+  ]},
+  { icon: '🚗', label: 'Voyages', emojis: [
+    '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐',
+    '🛻','🚚','🚛','🚜','🛵','🏍️','🚲','🛴','🚂','🚆',
+    '🚇','🚊','🚁','🛩️','✈️','🚀','🛸','🚢','⛵','🛥️',
+    '🏠','🏡','🏢','🏣','🏥','🏦','🏗️','🏛️','⛪','🕌',
+    '🗼','🗽','⛲','🎡','🎢','🏕️','🌋','🏔️','🗻','🏖️'
+  ]},
+  { icon: '💡', label: 'Objets', emojis: [
+    '⌚','📱','💻','⌨️','🖥️','🖨️','🖱️','💾','💿','📷',
+    '📹','🎥','📺','📻','⏰','🔔','📢','📣','🔊','🔇',
+    '💡','🔦','🕯️','📖','📚','📝','✏️','🖊️','🖋️','📌',
+    '📎','🔗','📐','📏','✂️','🗃️','🗂️','📁','📂','📅',
+    '📊','📈','📉','📋','📑','🔒','🔓','🔑','🔧','🔨',
+    '🛠️','⚙️','🧲','💊','🩺','🧪','🔬','🔭','📡','💉',
+    '🏷️','📦','📮','📧','📩','✉️','💌','💰','💳','💎'
+  ]},
+  { icon: '❤️', label: 'Symboles', emojis: [
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔',
+    '❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️',
+    '✝️','☪️','🕉️','☸️','✡️','🔯','🕎','☯️','☦️','🛐',
+    '♈','♉','♊','♋','♌','♍','♎','♏','♐','♑',
+    '♒','♓','⛎','🔀','▶️','⏸️','⏹️','⏺️','⏭️','⏮️',
+    '✅','❌','❓','❗','‼️','⚠️','🚫','⭕','🔴','🟠',
+    '🟡','🟢','🔵','🟣','🟤','⚫','⚪','🔶','🔷','♠️',
+    '♥️','♦️','♣️','🏁','🚩','🎌','🏴','🏳️','🏳️‍🌈','🇫🇷'
+  ]}
 ];
+
+var _emojiPickerFieldIndex = null;
 
 function toggleEmojiPicker(fieldIndex) {
   var picker = document.getElementById('emoji-picker-' + fieldIndex);
@@ -1034,12 +1097,51 @@ function toggleEmojiPicker(fieldIndex) {
     picker.style.display = 'none';
     return;
   }
-  var html = '';
-  for (var i = 0; i < EMOJI_LIST.length; i++) {
-    html += '<button type="button" class="emoji-pick-item" onclick="selectEmoji(' + fieldIndex + ',\'' + EMOJI_LIST[i] + '\')">' + EMOJI_LIST[i] + '</button>';
+  _emojiPickerFieldIndex = fieldIndex;
+  renderEmojiPicker(fieldIndex, 0, '');
+  picker.style.display = 'block';
+}
+
+function renderEmojiPicker(fieldIndex, catIndex, search) {
+  var picker = document.getElementById('emoji-picker-' + fieldIndex);
+  if (!picker) return;
+  var html = '<div class="emoji-picker-search">';
+  html += '<input type="text" class="emoji-search-input" placeholder="' + (currentLang === 'fr' ? 'Rechercher...' : 'Search...') + '" value="' + sanitize(search) + '" oninput="renderEmojiPicker(' + fieldIndex + ',' + catIndex + ',this.value)">';
+  html += '</div>';
+  html += '<div class="emoji-picker-tabs">';
+  for (var c = 0; c < EMOJI_CATEGORIES.length; c++) {
+    html += '<button type="button" class="emoji-tab' + (c === catIndex && !search ? ' emoji-tab-active' : '') + '" onclick="renderEmojiPicker(' + fieldIndex + ',' + c + ',\'\')" title="' + EMOJI_CATEGORIES[c].label + '">' + EMOJI_CATEGORIES[c].icon + '</button>';
   }
+  html += '</div>';
+  html += '<div class="emoji-picker-items">';
+  if (search) {
+    var q = search.toLowerCase();
+    for (var ci = 0; ci < EMOJI_CATEGORIES.length; ci++) {
+      var cat = EMOJI_CATEGORIES[ci];
+      var matched = cat.emojis.filter(function(e) { return cat.label.toLowerCase().indexOf(q) !== -1 || e.indexOf(q) !== -1; });
+      if (matched.length > 0) {
+        html += '<div class="emoji-cat-label">' + cat.label + '</div>';
+        html += '<div class="emoji-cat-grid">';
+        for (var m = 0; m < matched.length; m++) {
+          html += '<button type="button" class="emoji-pick-item" onclick="selectEmoji(' + fieldIndex + ',this.textContent)">' + matched[m] + '</button>';
+        }
+        html += '</div>';
+      }
+    }
+  } else {
+    var cat = EMOJI_CATEGORIES[catIndex];
+    html += '<div class="emoji-cat-grid">';
+    for (var ei = 0; ei < cat.emojis.length; ei++) {
+      html += '<button type="button" class="emoji-pick-item" onclick="selectEmoji(' + fieldIndex + ',this.textContent)">' + cat.emojis[ei] + '</button>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
   picker.innerHTML = html;
-  picker.style.display = 'grid';
+  if (search) {
+    var inp = picker.querySelector('.emoji-search-input');
+    if (inp) { inp.focus(); var l = inp.value.length; inp.setSelectionRange(l, l); }
+  }
 }
 
 function selectEmoji(fieldIndex, emoji) {
