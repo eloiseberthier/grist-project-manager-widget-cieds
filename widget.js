@@ -268,6 +268,8 @@ var i18n = {
     configureMapping: 'Configurer le mapping',
     mappingDescription: 'Par défaut, le widget utilise les tables PM_Tasks, PM_Users, etc. Vous pouvez mapper vos propres tables existantes pour réutiliser vos données.',
     mappingGuide: 'Consulter le guide complet du système de mapping',
+    securityTitle: 'Sécurité du document',
+    securitySubtitle: 'Protégez les tables PM_* avec des règles d\'accès Grist (ACL)',
     projectActive: 'Actif',
     projectCompleted: 'Terminé',
     projectArchived: 'Archivé',
@@ -538,6 +540,8 @@ var i18n = {
     configureMapping: 'Configure mapping',
     mappingDescription: 'By default the widget uses PM_Tasks, PM_Users, etc. You can map your own existing tables to reuse your data.',
     mappingGuide: 'Read the complete mapping guide',
+    securityTitle: 'Document security',
+    securitySubtitle: 'Protect PM_* tables with Grist access rules (ACL)',
     projectActive: 'Active',
     projectCompleted: 'Completed',
     projectArchived: 'Archived',
@@ -6540,6 +6544,7 @@ function renderSettingsView() {
   renderSettingsTagsList();
   renderCardDisplaySettings();
   renderKanbanStatusesList();
+  renderSecuritySection();
 }
 
 var _statusDragIndex = null;
@@ -6716,6 +6721,293 @@ async function toggleCardDisplay(key, value) {
   await saveCardDisplaySettings();
   renderCardDisplaySettings();
   renderKanbanView();
+}
+
+// =============================================================================
+// SECURITY — ACL RULES FOR PM_* TABLES
+// =============================================================================
+
+var PM_ACL_RULES = [
+  { tableId: 'PM_Settings',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Categories',      ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Tags',            ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Config',          ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Templates',       ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Tasks',           ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_Subtasks',        ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_Comments',        ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_TimeEntries',     ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_CustomFieldValues', ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_CustomFields',    ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Dependencies',    ownerPerms: '+CRUDS', editorPerms: '+RCU-D' },
+  { tableId: 'PM_Users',           ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Groups',          ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
+  { tableId: 'PM_Projects',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' }
+];
+
+async function checkSecurityStatus() {
+  try {
+    var rulesData = await grist.docApi.fetchTable('_grist_ACLRules');
+    var resourcesData = await grist.docApi.fetchTable('_grist_ACLResources');
+
+    var resourceMap = {};
+    if (resourcesData.id) {
+      for (var i = 0; i < resourcesData.id.length; i++) {
+        resourceMap[resourcesData.id[i]] = {
+          tableId: resourcesData.tableId[i],
+          colIds: resourcesData.colIds[i]
+        };
+      }
+    }
+
+    var existingTables = await grist.docApi.listTables();
+
+    var results = [];
+    for (var r = 0; r < PM_ACL_RULES.length; r++) {
+      var rule = PM_ACL_RULES[r];
+      var tableExists = existingTables.indexOf(rule.tableId) !== -1;
+      if (!tableExists) continue;
+
+      var hasOwnerRule = false;
+      var hasEditorRule = false;
+
+      if (rulesData.id) {
+        for (var j = 0; j < rulesData.id.length; j++) {
+          var res = resourceMap[rulesData.resource[j]];
+          if (!res || res.tableId !== rule.tableId || res.colIds !== '*') continue;
+          var formula = rulesData.aclFormula ? rulesData.aclFormula[j] || '' : '';
+          var perms = rulesData.permissionsText ? rulesData.permissionsText[j] || '' : '';
+          if (formula.indexOf('user.Access') !== -1 && formula.indexOf('OWNER') !== -1) hasOwnerRule = true;
+          if (formula === '' && perms !== '') hasEditorRule = true;
+          if (formula.indexOf('user.Access') !== -1 && (formula.indexOf('EDITOR') !== -1 || formula.indexOf('not') !== -1 || formula.indexOf('!=') !== -1)) hasEditorRule = true;
+        }
+      }
+
+      results.push({
+        tableId: rule.tableId,
+        secured: hasOwnerRule || hasEditorRule,
+        ownerPerms: rule.ownerPerms,
+        editorPerms: rule.editorPerms
+      });
+    }
+    return results;
+  } catch (e) {
+    console.error('[GristPM] Error checking security:', e);
+    return null;
+  }
+}
+
+async function applySecurityRules() {
+  var container = document.getElementById('security-status');
+  if (!container) return;
+
+  var confirmed = await showConfirmModal(
+    currentLang === 'fr'
+      ? 'Cela va créer des règles d\'accès (ACL) pour protéger les tables PM_*. Les owners garderont tous les droits. Les éditeurs pourront créer et modifier les tâches mais pas les supprimer ni modifier les paramètres. Le document sera rechargé automatiquement.'
+      : 'This will create access rules (ACL) to protect PM_* tables. Owners keep full rights. Editors can create and edit tasks but cannot delete them or modify settings. The document will reload automatically.',
+    currentLang === 'fr' ? 'Sécuriser le document' : 'Secure document'
+  );
+  if (!confirmed) return;
+
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:#6366f1;"><div class="spinner" style="margin:0 auto 10px;"></div>' +
+    (currentLang === 'fr' ? 'Application des règles en cours...' : 'Applying rules...') + '</div>';
+
+  try {
+    var existingTables = await grist.docApi.listTables();
+    var resourcesData = await grist.docApi.fetchTable('_grist_ACLResources');
+    var rulesData = await grist.docApi.fetchTable('_grist_ACLRules');
+
+    var resourceMap = {};
+    if (resourcesData.id) {
+      for (var i = 0; i < resourcesData.id.length; i++) {
+        resourceMap[resourcesData.tableId[i] + ':' + resourcesData.colIds[i]] = resourcesData.id[i];
+      }
+    }
+
+    var existingRuleResources = {};
+    if (rulesData.id) {
+      for (var j = 0; j < rulesData.id.length; j++) {
+        var resId = rulesData.resource[j];
+        if (!existingRuleResources[resId]) existingRuleResources[resId] = [];
+        existingRuleResources[resId].push({
+          aclFormula: rulesData.aclFormula ? rulesData.aclFormula[j] || '' : '',
+          permissionsText: rulesData.permissionsText ? rulesData.permissionsText[j] || '' : ''
+        });
+      }
+    }
+
+    var actions = [];
+    var tempResourceId = -1;
+
+    for (var r = 0; r < PM_ACL_RULES.length; r++) {
+      var rule = PM_ACL_RULES[r];
+      if (existingTables.indexOf(rule.tableId) === -1) continue;
+
+      var resKey = rule.tableId + ':*';
+      var resourceId = resourceMap[resKey];
+
+      var alreadyHasRules = false;
+      if (resourceId && existingRuleResources[resourceId]) {
+        var existing = existingRuleResources[resourceId];
+        for (var k = 0; k < existing.length; k++) {
+          if (existing[k].aclFormula.indexOf('user.Access') !== -1) {
+            alreadyHasRules = true;
+            break;
+          }
+        }
+      }
+      if (alreadyHasRules) continue;
+
+      if (!resourceId) {
+        resourceId = tempResourceId;
+        actions.push(['AddRecord', '_grist_ACLResources', tempResourceId, { tableId: rule.tableId, colIds: '*' }]);
+        tempResourceId--;
+      }
+
+      actions.push(['AddRecord', '_grist_ACLRules', null, {
+        resource: resourceId,
+        aclFormula: 'user.Access in [OWNER]',
+        permissionsText: rule.ownerPerms,
+        memo: 'PM Widget - Owner'
+      }]);
+      actions.push(['AddRecord', '_grist_ACLRules', null, {
+        resource: resourceId,
+        aclFormula: '',
+        permissionsText: rule.editorPerms,
+        memo: 'PM Widget - Default'
+      }]);
+    }
+
+    if (actions.length === 0) {
+      showToast(currentLang === 'fr' ? 'Toutes les tables sont déjà sécurisées' : 'All tables are already secured', 'success');
+      renderSecuritySection();
+      return;
+    }
+
+    await grist.docApi.applyUserActions(actions);
+    showToast(currentLang === 'fr' ? 'Règles de sécurité appliquées ✓' : 'Security rules applied ✓', 'success');
+  } catch (e) {
+    console.error('[GristPM] Error applying security rules:', e);
+    container.innerHTML = '<div class="security-error">' +
+      (currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + sanitize(e.message) +
+      '<br><small>' + (currentLang === 'fr' ? 'Seul un Owner du document peut appliquer les règles d\'accès.' : 'Only a document Owner can apply access rules.') + '</small></div>';
+  }
+}
+
+async function removeSecurityRules() {
+  var confirmed = await showConfirmModal(
+    currentLang === 'fr'
+      ? 'Cela va supprimer toutes les règles d\'accès créées par le widget sur les tables PM_*. Le document sera rechargé automatiquement.'
+      : 'This will remove all access rules created by the widget on PM_* tables. The document will reload automatically.',
+    currentLang === 'fr' ? 'Retirer la sécurité' : 'Remove security'
+  );
+  if (!confirmed) return;
+
+  try {
+    var rulesData = await grist.docApi.fetchTable('_grist_ACLRules');
+    var resourcesData = await grist.docApi.fetchTable('_grist_ACLResources');
+
+    var pmResourceIds = {};
+    if (resourcesData.id) {
+      for (var i = 0; i < resourcesData.id.length; i++) {
+        if (resourcesData.tableId[i] && resourcesData.tableId[i].indexOf('PM_') === 0 && resourcesData.colIds[i] === '*') {
+          pmResourceIds[resourcesData.id[i]] = true;
+        }
+      }
+    }
+
+    var actions = [];
+    if (rulesData.id) {
+      for (var j = 0; j < rulesData.id.length; j++) {
+        if (pmResourceIds[rulesData.resource[j]]) {
+          var memo = rulesData.memo ? rulesData.memo[j] || '' : '';
+          if (memo.indexOf('PM Widget') !== -1) {
+            actions.push(['RemoveRecord', '_grist_ACLRules', rulesData.id[j]]);
+          }
+        }
+      }
+    }
+
+    if (actions.length === 0) {
+      showToast(currentLang === 'fr' ? 'Aucune règle PM Widget à supprimer' : 'No PM Widget rules to remove', 'info');
+      return;
+    }
+
+    await grist.docApi.applyUserActions(actions);
+    showToast(currentLang === 'fr' ? 'Règles supprimées ✓' : 'Rules removed ✓', 'success');
+  } catch (e) {
+    console.error('[GristPM] Error removing security rules:', e);
+    showToast((currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + e.message, 'error');
+  }
+}
+
+async function renderSecuritySection() {
+  var container = document.getElementById('security-status');
+  if (!container) return;
+  if (!isOwner) {
+    container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:12px;font-size:13px;">' +
+      (currentLang === 'fr' ? 'Seuls les owners peuvent gérer la sécurité' : 'Only owners can manage security') + '</div>';
+    return;
+  }
+
+  container.innerHTML = '<div style="text-align:center;padding:12px;color:#94a3b8;">' +
+    (currentLang === 'fr' ? 'Vérification...' : 'Checking...') + '</div>';
+
+  var results = await checkSecurityStatus();
+  if (!results) {
+    container.innerHTML = '<div class="security-error">' +
+      (currentLang === 'fr' ? 'Impossible de lire les règles d\'accès' : 'Cannot read access rules') + '</div>';
+    return;
+  }
+
+  if (results.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:12px;font-size:13px;">' +
+      (currentLang === 'fr' ? 'Aucune table PM_* détectée' : 'No PM_* tables detected') + '</div>';
+    return;
+  }
+
+  var securedCount = results.filter(function(r) { return r.secured; }).length;
+  var totalCount = results.length;
+  var allSecured = securedCount === totalCount;
+
+  var html = '<div class="security-summary ' + (allSecured ? 'security-ok' : 'security-warn') + '">';
+  html += '<span class="security-icon">' + (allSecured ? '🔒' : '🔓') + '</span>';
+  html += '<span>' + (allSecured
+    ? (currentLang === 'fr' ? 'Document sécurisé' : 'Document secured')
+    : (currentLang === 'fr' ? securedCount + '/' + totalCount + ' tables protégées' : securedCount + '/' + totalCount + ' tables protected')
+  ) + '</span>';
+  html += '</div>';
+
+  html += '<div class="security-table-list">';
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    var readOnly = r.editorPerms.indexOf('-CUD') !== -1 || (r.editorPerms.indexOf('-C') !== -1 && r.editorPerms.indexOf('-D') !== -1);
+    var permLabel = readOnly
+      ? (currentLang === 'fr' ? 'Lecture seule' : 'Read only')
+      : (currentLang === 'fr' ? 'Créer / Modifier' : 'Create / Edit');
+
+    html += '<div class="security-table-row">';
+    html += '<span class="security-table-icon">' + (r.secured ? '✅' : '⚠️') + '</span>';
+    html += '<span class="security-table-name">' + sanitize(r.tableId) + '</span>';
+    html += '<span class="security-table-perm ' + (readOnly ? 'perm-readonly' : 'perm-readwrite') + '">' + permLabel + '</span>';
+    html += '<span class="security-table-status ' + (r.secured ? 'status-ok' : 'status-warn') + '">' +
+      (r.secured ? (currentLang === 'fr' ? 'Protégée' : 'Protected') : (currentLang === 'fr' ? 'Non protégée' : 'Unprotected')) + '</span>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="security-actions">';
+  if (!allSecured) {
+    html += '<button class="btn btn-primary btn-sm" onclick="applySecurityRules()">' +
+      (currentLang === 'fr' ? '🔒 Sécuriser le document' : '🔒 Secure document') + '</button>';
+  }
+  if (securedCount > 0) {
+    html += '<button class="btn btn-secondary btn-sm" onclick="removeSecurityRules()" style="color:#ef4444;">' +
+      (currentLang === 'fr' ? 'Retirer la sécurité' : 'Remove security') + '</button>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
 }
 
 var _settingsProjectSearch = '';

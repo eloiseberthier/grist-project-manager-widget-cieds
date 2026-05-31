@@ -555,6 +555,109 @@
       .settings-grid { grid-template-columns: 1fr; }
     }
 
+    /* ========== SECURITY SECTION ========== */
+    .security-summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .security-ok {
+      background: #f0fdf4;
+      color: #16a34a;
+      border: 1px solid #bbf7d0;
+    }
+    .security-warn {
+      background: #fffbeb;
+      color: #d97706;
+      border: 1px solid #fde68a;
+    }
+    .security-icon { font-size: 20px; }
+    .security-table-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .security-table-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+    }
+    .security-table-row:hover { background: #f1f5f9; }
+    .security-table-icon { font-size: 14px; flex-shrink: 0; }
+    .security-table-name {
+      flex: 1;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .security-table-perm {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .perm-readonly { background: #dbeafe; color: #1d4ed8; }
+    .perm-readwrite { background: #fef3c7; color: #92400e; }
+    .security-table-status {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .status-ok { background: #dcfce7; color: #16a34a; }
+    .status-warn { background: #fef9c3; color: #ca8a04; }
+    .security-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .security-error {
+      text-align: center;
+      color: #ef4444;
+      padding: 14px;
+      font-size: 13px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+    }
+    body.dark-mode .security-ok {
+      background: #052e16;
+      color: #4ade80;
+      border-color: #166534;
+    }
+    body.dark-mode .security-warn {
+      background: #451a03;
+      color: #fbbf24;
+      border-color: #92400e;
+    }
+    body.dark-mode .security-table-row {
+      background: #0f172a;
+      border-color: #1e293b;
+    }
+    body.dark-mode .security-table-row:hover { background: #1e293b; }
+    body.dark-mode .security-table-name { color: #e2e8f0; }
+    body.dark-mode .perm-readonly { background: #1e3a5f; color: #93c5fd; }
+    body.dark-mode .perm-readwrite { background: #451a03; color: #fcd34d; }
+    body.dark-mode .status-ok { background: #052e16; color: #86efac; }
+    body.dark-mode .status-warn { background: #422006; color: #fde047; }
+    body.dark-mode .security-error {
+      background: #450a0a;
+      color: #fca5a5;
+      border-color: #7f1d1d;
+    }
+
     /* ========== STAT CARDS ========== */
     .stats-row {
       display: flex;
@@ -3895,6 +3998,17 @@
           <div id="card-display-settings" class="settings-content"></div>
         </div>
 
+        <!-- SECURITY SECTION -->
+        <div class="settings-section" style="grid-column: 1 / -1;">
+          <div class="settings-section-header">
+            <div>
+              <h3>🛡️ <span data-i18n="securityTitle">Sécurité du document</span></h3>
+              <p data-i18n="securitySubtitle">Protégez les tables PM_* avec des règles d'accès Grist (ACL)</p>
+            </div>
+          </div>
+          <div id="security-status" class="settings-content"></div>
+        </div>
+
         <!-- COLUMN MAPPING SECTION -->
         <div class="settings-section" style="grid-column: 1 / -1;">
           <div class="settings-section-header">
@@ -4026,7 +4140,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=69"></script>
+  <script src="widget.js?v=70"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 Said Hamadou (isaytoo)</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
