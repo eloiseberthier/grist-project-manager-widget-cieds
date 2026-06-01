@@ -4604,14 +4604,15 @@ async function updateUser(userId) {
   var name = document.getElementById('user-name').value.trim();
   if (!name) return;
 
+  var record = {};
+  record[getColumnName('users', 'name')] = name;
+  record[getColumnName('users', 'email')] = document.getElementById('user-email').value.trim();
+  record[getColumnName('users', 'role')] = document.getElementById('user-role').value;
+  record[getColumnName('users', 'group')] = document.getElementById('user-group').value;
+
   try {
     await grist.docApi.applyUserActions([
-      ['UpdateRecord', USERS_TABLE, userId, {
-        Name: name,
-        Email: document.getElementById('user-email').value.trim(),
-        Role: document.getElementById('user-role').value,
-        Group_Name: document.getElementById('user-group').value
-      }]
+      ['UpdateRecord', USERS_TABLE, userId, record]
     ]);
     showToast(t('taskUpdated'), 'success');
     closeModalForce();
@@ -4695,12 +4696,11 @@ async function createUser() {
   var name = document.getElementById('user-name').value.trim();
   if (!name) return;
 
-  var record = {
-    Name: name,
-    Email: document.getElementById('user-email').value.trim(),
-    Role: document.getElementById('user-role').value,
-    Group_Name: document.getElementById('user-group').value
-  };
+  var record = {};
+  record[getColumnName('users', 'name')] = name;
+  record[getColumnName('users', 'email')] = document.getElementById('user-email').value.trim();
+  record[getColumnName('users', 'role')] = document.getElementById('user-role').value;
+  record[getColumnName('users', 'group')] = document.getElementById('user-group').value;
 
   try {
     await grist.docApi.applyUserActions([
