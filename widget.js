@@ -6387,15 +6387,89 @@ async function useTemplate(tplId) {
 }
 
 // =============================================================================
-// OWNER RESTRICTIONS
+// WIDGET PERMISSIONS (centralized via Widget_Registry + Widget_Permissions)
 // =============================================================================
 
+var WIDGET_ID = 'grist-project-manager';
+var WIDGET_NAME = 'Gestion de Projet';
+var WIDGET_TABS = [
+  { id: 'calendar',  label_fr: 'Calendrier',  label_en: 'Calendar' },
+  { id: 'kanban',    label_fr: 'Kanban',       label_en: 'Kanban' },
+  { id: 'table',     label_fr: 'Tableau',      label_en: 'Table' },
+  { id: 'gantt',     label_fr: 'Gantt',        label_en: 'Gantt' },
+  { id: 'templates', label_fr: 'Templates',    label_en: 'Templates',  ownerOnly: true },
+  { id: 'stats',     label_fr: 'Stats',        label_en: 'Stats',      ownerOnly: true },
+  { id: 'team',      label_fr: 'Équipe',       label_en: 'Team',       ownerOnly: true },
+  { id: 'settings',  label_fr: 'Paramètres',   label_en: 'Settings',   ownerOnly: true }
+];
+
+var userAllowedTabs = [];
+
+async function registerWidget() {
+  try {
+    var tables = await grist.docApi.listTables();
+    if (tables.indexOf('Widget_Registry') === -1) return;
+
+    var data = await grist.docApi.fetchTable('Widget_Registry');
+    var existingRow = -1;
+    if (data && data.id) {
+      for (var i = 0; i < data.id.length; i++) {
+        if (data.WidgetId[i] === WIDGET_ID) { existingRow = data.id[i]; break; }
+      }
+    }
+    var tabsJson = JSON.stringify(WIDGET_TABS);
+    if (existingRow !== -1) {
+      await grist.docApi.applyUserActions([
+        ['UpdateRecord', 'Widget_Registry', existingRow, { WidgetName: WIDGET_NAME, AvailableTabs: tabsJson }]
+      ]);
+    } else {
+      await grist.docApi.applyUserActions([
+        ['AddRecord', 'Widget_Registry', null, { WidgetId: WIDGET_ID, WidgetName: WIDGET_NAME, AvailableTabs: tabsJson }]
+      ]);
+    }
+  } catch (e) {
+    console.log('Widget registration skipped:', e.message);
+  }
+}
+
+async function loadWidgetPermissions() {
+  userAllowedTabs = [];
+  if (!currentUserEmail) return;
+  try {
+    var tables = await grist.docApi.listTables();
+    if (tables.indexOf('Widget_Permissions') === -1) return;
+
+    var data = await grist.docApi.fetchTable('Widget_Permissions');
+    if (!data || !data.id) return;
+    var email = currentUserEmail.toLowerCase().trim();
+    for (var i = 0; i < data.id.length; i++) {
+      if (data.WidgetId[i] === WIDGET_ID && (data.Email[i] || '').toLowerCase().trim() === email) {
+        userAllowedTabs = (data.AllowedTabs[i] || '').split(',').map(function(x) { return x.trim().toLowerCase(); }).filter(Boolean);
+        break;
+      }
+    }
+  } catch (e) {
+    console.log('Widget permissions load skipped:', e.message);
+  }
+}
+
+function isTabAllowed(tabId) {
+  if (userAllowedTabs.length > 0) return userAllowedTabs.indexOf(tabId) !== -1;
+  if (isOwner) return true;
+  var ownerTabs = ['team', 'templates', 'stats', 'settings'];
+  return ownerTabs.indexOf(tabId) === -1;
+}
+
 function applyOwnerRestrictions() {
-  var managerTabs = ['team', 'templates', 'stats', 'settings'];
-  managerTabs.forEach(function(tab) {
+  var allTabs = ['calendar', 'kanban', 'table', 'gantt', 'templates', 'stats', 'team', 'settings'];
+  allTabs.forEach(function(tab) {
     var el = document.querySelector('[data-tab="' + tab + '"]');
-    if (el) el.style.display = isOwner ? '' : 'none';
+    if (el) el.style.display = isTabAllowed(tab) ? '' : 'none';
   });
+  var activeBtn = document.querySelector('.tab-btn.active');
+  if (activeBtn && !isTabAllowed(activeBtn.getAttribute('data-tab'))) {
+    switchTab('calendar');
+  }
 }
 
 // =============================================================================
@@ -8180,6 +8254,8 @@ if (!isInsideGrist()) {
     console.log('Role detection — isOwner:', isOwner, 'isEditor:', isEditor, 'email:', currentUserEmail);
 
     loadDarkModePreference();
+    if (isOwner) await registerWidget();
+    await loadWidgetPermissions();
     applyOwnerRestrictions();
     await ensureTables();
     await loadSettings();
