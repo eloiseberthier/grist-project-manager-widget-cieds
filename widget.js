@@ -7059,10 +7059,10 @@ function renderBurndownChart() {
   var chartH = 180;
   var barW = Math.max(20, Math.floor(300 / weeks));
 
-  var html = '<div style="display:flex;gap:6px;margin-bottom:8px;">';
-  html += '<span style="font-size:11px;"><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px;"></span>' + t('burnRemaining') + '</span>';
-  html += '<span style="font-size:11px;"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;margin-right:4px;"></span>' + t('burnCompleted') + '</span>';
-  html += '<span style="font-size:11px;"><span style="display:inline-block;width:10px;height:10px;background:none;border:1px dashed #94a3b8;border-radius:2px;margin-right:4px;"></span>' + t('burnIdeal') + '</span>';
+  var html = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">';
+  html += '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;flex-shrink:0;"></span>' + t('burnRemaining') + '</span>';
+  html += '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;flex-shrink:0;"></span>' + t('burnCompleted') + '</span>';
+  html += '<span style="font-size:11px;display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;border:1.5px dashed #94a3b8;border-radius:2px;flex-shrink:0;"></span>' + t('burnIdeal') + '</span>';
   html += '</div>';
 
   html += '<div style="position:relative;height:' + (chartH + 30) + 'px;">';
