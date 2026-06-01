@@ -4212,6 +4212,18 @@
           </div>
         </div>
 
+        <!-- AUTOMATIONS SECTION -->
+        <div class="settings-section" style="grid-column: 1 / -1;">
+          <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <h3>⚡ <span data-i18n="automationTitle">Automatisations</span></h3>
+              <p data-i18n="automationSubtitle">Actions automatiques quand les tâches changent</p>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openAddAutomationRuleModal()">+ <span data-i18n="addRule">Ajouter une règle</span></button>
+          </div>
+          <div id="automation-rules-list" class="settings-content"></div>
+        </div>
+
         <!-- SECURITY SECTION -->
         <div class="settings-section" style="grid-column: 1 / -1;">
           <div class="settings-section-header">
@@ -4280,6 +4292,61 @@
       <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 24px 20px;border-top:1px solid #f1f5f9;">
         <button class="btn btn-secondary" onclick="closePromptModal(null)" style="min-width:90px;">Annuler</button>
         <button class="btn btn-primary" id="prompt-modal-ok" onclick="submitPromptModal()" style="min-width:90px;">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTOMATION RULE MODAL -->
+  <div id="automation-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h2 id="automation-modal-title">⚡ Ajouter une règle</h2>
+        <button class="modal-close" onclick="closeAutomationModal()">×</button>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <div class="form-group" style="margin-bottom:14px;">
+          <label data-i18n="triggerLabel">Déclencheur</label>
+          <select id="auto-trigger" onchange="onAutoTriggerChange()" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;">
+            <option value="status_change" data-i18n="triggerStatusChange">Changement de statut</option>
+            <option value="priority_change" data-i18n="triggerPriorityChange">Changement de priorité</option>
+            <option value="assignment_change" data-i18n="triggerAssignmentChange">Changement d'assignation</option>
+            <option value="overdue" data-i18n="triggerOverdue">Tâche en retard</option>
+            <option value="approaching_deadline" data-i18n="triggerApproachingDeadline">Échéance proche (3j)</option>
+          </select>
+        </div>
+        <div id="auto-conditions" style="display:flex;gap:8px;margin-bottom:14px;">
+          <div class="form-group" style="flex:1;">
+            <label data-i18n="conditionFrom">De</label>
+            <select id="auto-from" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;"></select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label data-i18n="conditionTo">Vers</label>
+            <select id="auto-to" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;"></select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label data-i18n="actionLabel">Action</label>
+          <select id="auto-action" onchange="onAutoActionChange()" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;">
+            <option value="notify_assignee" data-i18n="actionNotifyAssignee">Notifier l'assigné</option>
+            <option value="notify_project_lead" data-i18n="actionNotifyProjectLead">Notifier le responsable</option>
+            <option value="notify_specific" data-i18n="actionNotifySpecific">Notifier une personne</option>
+            <option value="notify_all" data-i18n="actionNotifyAll">Notifier tout le monde</option>
+          </select>
+        </div>
+        <div id="auto-target-wrap" class="form-group" style="margin-bottom:14px;display:none;">
+          <label>Email</label>
+          <input type="email" id="auto-target" placeholder="email@example.com" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label data-i18n="messageTemplate">Message</label>
+          <input type="text" id="auto-msg-fr" placeholder="FR: La tâche &quot;{title}&quot; a changé" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+          <input type="text" id="auto-msg-en" placeholder="EN: Task &quot;{title}&quot; changed" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:8px;">
+          <div style="font-size:10px;color:#94a3b8;margin-top:4px;">{title} {status} {priority} {assignee}</div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:12px 20px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e2e8f0;">
+        <button class="btn btn-secondary" onclick="closeAutomationModal()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveAutomationRuleFromModal()">OK</button>
       </div>
     </div>
   </div>
@@ -4354,7 +4421,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=81"></script>
+  <script src="widget.js?v=82"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

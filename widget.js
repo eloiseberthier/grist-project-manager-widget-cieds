@@ -87,6 +87,34 @@ var i18n = {
     overdueTasksAlert: 'tâche(s) en retard',
     upcomingTasksAlert: 'tâche(s) à venir (3j)',
     noAlerts: 'Aucune alerte',
+    markAllRead: 'Tout lu',
+    markAsRead: 'Marquer comme lu',
+    notifUnread: 'non lu(s)',
+    automationTitle: 'Automatisations',
+    automationSubtitle: 'Actions automatiques quand les tâches changent',
+    addRule: 'Ajouter une règle',
+    ruleEnabled: 'Activée',
+    ruleDisabled: 'Désactivée',
+    triggerLabel: 'Déclencheur',
+    triggerStatusChange: 'Changement de statut',
+    triggerPriorityChange: 'Changement de priorité',
+    triggerAssignmentChange: 'Changement d\'assignation',
+    triggerOverdue: 'Tâche en retard',
+    triggerApproachingDeadline: 'Échéance proche (3j)',
+    conditionFrom: 'De',
+    conditionTo: 'Vers',
+    conditionAny: 'N\'importe quel',
+    actionLabel: 'Action',
+    actionNotifyAssignee: 'Notifier l\'assigné',
+    actionNotifyProjectLead: 'Notifier le responsable',
+    actionNotifySpecific: 'Notifier une personne',
+    actionNotifyAll: 'Notifier tout le monde',
+    noRules: 'Aucune règle configurée',
+    ruleCreated: 'Règle créée',
+    ruleDeleted: 'Règle supprimée',
+    ruleSaved: 'Règle sauvegardée',
+    messageTemplate: 'Message',
+    defaultRules: 'Ajouter les règles par défaut',
     exportCsv: 'Export CSV',
     exportPdf: 'Export PDF',
     searchPlaceholder: 'Rechercher...',
@@ -363,6 +391,34 @@ var i18n = {
     overdueTasksAlert: 'overdue task(s)',
     upcomingTasksAlert: 'upcoming task(s) (3d)',
     noAlerts: 'No alerts',
+    markAllRead: 'All read',
+    markAsRead: 'Mark as read',
+    notifUnread: 'unread',
+    automationTitle: 'Automations',
+    automationSubtitle: 'Automatic actions when tasks change',
+    addRule: 'Add a rule',
+    ruleEnabled: 'Enabled',
+    ruleDisabled: 'Disabled',
+    triggerLabel: 'Trigger',
+    triggerStatusChange: 'Status change',
+    triggerPriorityChange: 'Priority change',
+    triggerAssignmentChange: 'Assignment change',
+    triggerOverdue: 'Task overdue',
+    triggerApproachingDeadline: 'Approaching deadline (3d)',
+    conditionFrom: 'From',
+    conditionTo: 'To',
+    conditionAny: 'Any',
+    actionLabel: 'Action',
+    actionNotifyAssignee: 'Notify assignee',
+    actionNotifyProjectLead: 'Notify project lead',
+    actionNotifySpecific: 'Notify specific person',
+    actionNotifyAll: 'Notify everyone',
+    noRules: 'No rules configured',
+    ruleCreated: 'Rule created',
+    ruleDeleted: 'Rule deleted',
+    ruleSaved: 'Rule saved',
+    messageTemplate: 'Message',
+    defaultRules: 'Add default rules',
     exportCsv: 'Export CSV',
     exportPdf: 'Export PDF',
     searchPlaceholder: 'Search...',
@@ -649,6 +705,8 @@ async function saveCardDisplaySettings() {
 }
 
 var raciEnabled = false;
+var automationRules = [];
+var pmNotifications = [];
 
 // PM_Settings helpers
 var _settingsCache = {};
@@ -671,6 +729,9 @@ async function loadSettings() {
     }
     if (_settingsCache.raci_enabled) {
       raciEnabled = _settingsCache.raci_enabled.value === 'true';
+    }
+    if (_settingsCache.automation_rules) {
+      try { automationRules = JSON.parse(_settingsCache.automation_rules.value); } catch (e2) { automationRules = []; }
     }
   } catch (e) {
     console.log('[GristPM] PM_Settings not available yet');
@@ -716,6 +777,7 @@ var TAGS_TABLE = 'PM_Tags';
 var PROJECTS_TABLE = 'PM_Projects';
 var CONFIG_TABLE = 'PM_Config';
 var SETTINGS_TABLE = 'PM_Settings';
+var NOTIFICATIONS_TABLE = 'PM_Notifications';
 
 // Default table names — used to detect remapping: if a table var differs from
 // its default it means the user mapped it to an existing table, so we must NOT
@@ -1586,6 +1648,20 @@ async function ensureTables() {
       ]);
     }
 
+    if (existingTables.indexOf(NOTIFICATIONS_TABLE) === -1) {
+      await grist.docApi.applyUserActions([
+        ['AddTable', NOTIFICATIONS_TABLE, [
+          { id: 'Task_Id', type: 'Int' },
+          { id: 'User_Email', type: 'Text' },
+          { id: 'Type', type: 'Text' },
+          { id: 'Message', type: 'Text' },
+          { id: 'Is_Read', type: 'Bool' },
+          { id: 'Created_At', type: 'Date' },
+          { id: 'Rule_Id', type: 'Text' }
+        ]]
+      ]);
+    }
+
     // Migration: Add missing columns to existing PM_Tasks table
     if (existingTables.indexOf(TASKS_TABLE) !== -1) {
       try {
@@ -1972,6 +2048,27 @@ async function loadAllData() {
     }
   } catch (e) {
     projects = [];
+  }
+
+  try {
+    var notifData = await grist.docApi.fetchTable(NOTIFICATIONS_TABLE);
+    pmNotifications = [];
+    if (notifData && notifData.id) {
+      for (var ni = 0; ni < notifData.id.length; ni++) {
+        pmNotifications.push({
+          id: notifData.id[ni],
+          Task_Id: notifData.Task_Id ? notifData.Task_Id[ni] : null,
+          User_Email: notifData.User_Email ? notifData.User_Email[ni] : '',
+          Type: notifData.Type ? notifData.Type[ni] : '',
+          Message: notifData.Message ? notifData.Message[ni] : '',
+          Is_Read: notifData.Is_Read ? notifData.Is_Read[ni] : false,
+          Created_At: notifData.Created_At ? notifData.Created_At[ni] : null,
+          Rule_Id: notifData.Rule_Id ? notifData.Rule_Id[ni] : ''
+        });
+      }
+    }
+  } catch (e) {
+    pmNotifications = [];
   }
 
   renderProjectSelector();
@@ -3127,10 +3224,14 @@ function renderTaskCard(task) {
 async function archiveTask(taskId) {
   try {
     var statusCol = getColumnName('tasks', 'status');
-    await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'archived' }]]);
     var task = tasks.find(function(t) { return t.id === taskId; });
+    var oldStatus = task ? task.Status : '';
+    await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'archived' }]]);
     if (task) task.Status = 'archived';
     showToast(currentLang === 'fr' ? 'Tâche archivée' : 'Task archived', 'success');
+    if (task && oldStatus !== 'archived') {
+      await evaluateAutomationRules(Object.assign({}, task, { Status: 'archived' }), { status: { from: oldStatus, to: 'archived' } });
+    }
     refreshAllViews();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
@@ -3140,10 +3241,14 @@ async function archiveTask(taskId) {
 async function restoreTask(taskId) {
   try {
     var statusCol = getColumnName('tasks', 'status');
-    await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'todo' }]]);
     var task = tasks.find(function(t) { return t.id === taskId; });
+    var oldStatus = task ? task.Status : '';
+    await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'todo' }]]);
     if (task) task.Status = 'todo';
     showToast(currentLang === 'fr' ? 'Tâche restaurée' : 'Task restored', 'success');
+    if (task && oldStatus !== 'todo') {
+      await evaluateAutomationRules(Object.assign({}, task, { Status: 'todo' }), { status: { from: oldStatus, to: 'todo' } });
+    }
     refreshAllViews();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
@@ -3221,6 +3326,8 @@ async function onDrop(e) {
       return;
     }
     try {
+      var draggedTask = tasks.find(function(t) { return t.id === draggedTaskId; });
+      var oldVal = draggedTask ? draggedTask[field] : '';
       var record = {};
       if (field === 'Project_Id') {
         record[field] = newValue ? parseInt(newValue) : null;
@@ -3235,6 +3342,14 @@ async function onDrop(e) {
         }
       }
       showToast(t('taskMoved'), 'success');
+      if (draggedTask && oldVal !== newValue) {
+        var dropChanges = {};
+        if (field === 'Status') dropChanges.status = { from: oldVal, to: newValue };
+        if (field === 'Priority') dropChanges.priority = { from: oldVal, to: newValue };
+        if (Object.keys(dropChanges).length > 0) {
+          await evaluateAutomationRules(Object.assign({}, draggedTask, record), dropChanges);
+        }
+      }
       refreshAllViews();
     } catch (err) {
       console.error('Error moving task:', err);
@@ -6263,13 +6378,25 @@ async function updateTask(taskId) {
       ['UpdateRecord', TASKS_TABLE, taskId, record]
     ]);
     showToast(t('taskUpdated'), 'success');
-    
+
+    var autoChanges = {};
+    if (task) {
+      if (task.Status !== newStatus) autoChanges.status = { from: task.Status, to: newStatus };
+      var newPriority = document.getElementById('task-priority').value;
+      if (task.Priority !== newPriority) autoChanges.priority = { from: task.Priority, to: newPriority };
+      var newAssignee = editAssignees.join(', ');
+      if (task.Assignee !== newAssignee) autoChanges.assignee = { from: task.Assignee, to: newAssignee };
+    }
+    if (Object.keys(autoChanges).length > 0) {
+      await evaluateAutomationRules(Object.assign({}, task, record, { id: taskId }), autoChanges);
+    }
+
     // Create next occurrence if task is recurring and just completed
     if (newStatus === 'done' && wasNotDone && newRecurrence && newRecurrence !== 'none') {
       var updatedTask = Object.assign({}, task, record);
       await createNextOccurrence(updatedTask);
     }
-    
+
     closeModalForce();
     await loadAllData();
   } catch (e) {
@@ -6940,6 +7067,7 @@ function renderSettingsView() {
   renderCardDisplaySettings();
   renderKanbanStatusesList();
   renderRaciToggle();
+  renderAutomationsSection();
   renderSecuritySection();
 }
 
@@ -7139,7 +7267,8 @@ var PM_ACL_RULES = [
   { tableId: 'PM_Users',           ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
   { tableId: 'PM_Groups',          ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
   { tableId: 'PM_Projects',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
-  { tableId: 'PM_UserInfo',        ownerPerms: '+CRUDS', editorPerms: '+RCUD' }
+  { tableId: 'PM_UserInfo',        ownerPerms: '+CRUDS', editorPerms: '+RCUD' },
+  { tableId: 'PM_Notifications',   ownerPerms: '+CRUDS', editorPerms: '+RCUD' }
 ];
 
 async function checkSecurityStatus() {
@@ -7364,6 +7493,209 @@ async function toggleRaci(enabled) {
   await saveSetting('raci_enabled', enabled ? 'true' : 'false');
   renderRaciToggle();
   showToast(t(enabled ? 'raciEnabled' : 'raciDisabled'), 'success');
+}
+
+// --- Automations Settings UI ---
+
+var TRIGGER_LABELS = {
+  status_change: 'triggerStatusChange',
+  priority_change: 'triggerPriorityChange',
+  assignment_change: 'triggerAssignmentChange',
+  overdue: 'triggerOverdue',
+  approaching_deadline: 'triggerApproachingDeadline'
+};
+
+var ACTION_LABELS = {
+  notify_assignee: 'actionNotifyAssignee',
+  notify_project_lead: 'actionNotifyProjectLead',
+  notify_specific: 'actionNotifySpecific',
+  notify_all: 'actionNotifyAll'
+};
+
+function renderAutomationsSection() {
+  var container = document.getElementById('automation-rules-list');
+  if (!container) return;
+  if (!isOwner) {
+    container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:12px;font-size:13px;">' +
+      (currentLang === 'fr' ? 'Seuls les owners peuvent gérer les automatisations' : 'Only owners can manage automations') + '</div>';
+    return;
+  }
+
+  if (!automationRules || automationRules.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px;">' +
+      '<p>' + t('noRules') + '</p>' +
+      '<button class="btn btn-secondary btn-sm" onclick="addDefaultAutomationRules()" style="margin-top:8px;">' + t('defaultRules') + '</button></div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < automationRules.length; i++) {
+    var rule = automationRules[i];
+    var trigLabel = t(TRIGGER_LABELS[rule.trigger] || rule.trigger);
+    var actLabel = t(ACTION_LABELS[rule.action] || rule.action);
+    var condText = '';
+    if (rule.condition) {
+      if (rule.condition.from) condText += t('conditionFrom') + ': ' + rule.condition.from + ' ';
+      if (rule.condition.to) condText += t('conditionTo') + ': ' + rule.condition.to;
+    }
+
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:white;border-radius:8px;margin-bottom:6px;border:1px solid #e2e8f0;">';
+    html += '<div style="flex:1;">';
+    html += '<div style="font-size:13px;font-weight:600;">⚡ ' + trigLabel;
+    if (condText) html += ' <span style="font-size:11px;color:#64748b;font-weight:400;">(' + condText.trim() + ')</span>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:#64748b;">→ ' + actLabel;
+    if (rule.action_target) html += ' (' + sanitize(rule.action_target) + ')';
+    html += '</div>';
+    html += '</div>';
+    html += '<label class="toggle-switch">';
+    html += '<input type="checkbox" ' + (rule.enabled ? 'checked' : '') + ' onchange="toggleAutomationRule(' + i + ', this.checked)">';
+    html += '<span class="toggle-slider"></span></label>';
+    html += '<button class="btn-icon" onclick="openEditAutomationRuleModal(' + i + ')">✏️</button>';
+    html += '<button class="btn-icon" onclick="deleteAutomationRule(' + i + ')">🗑️</button>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+var _editingRuleIndex = null;
+
+function openAddAutomationRuleModal() {
+  _editingRuleIndex = null;
+  document.getElementById('automation-modal-title').textContent = '⚡ ' + t('addRule');
+  document.getElementById('auto-trigger').value = 'status_change';
+  document.getElementById('auto-action').value = 'notify_assignee';
+  document.getElementById('auto-target').value = '';
+  document.getElementById('auto-msg-fr').value = '';
+  document.getElementById('auto-msg-en').value = '';
+  onAutoTriggerChange();
+  onAutoActionChange();
+  document.getElementById('automation-modal').style.display = 'flex';
+}
+
+function openEditAutomationRuleModal(index) {
+  _editingRuleIndex = index;
+  var rule = automationRules[index];
+  document.getElementById('automation-modal-title').textContent = '⚡ ' + t('addRule');
+  document.getElementById('auto-trigger').value = rule.trigger;
+  document.getElementById('auto-action').value = rule.action;
+  document.getElementById('auto-target').value = rule.action_target || '';
+  document.getElementById('auto-msg-fr').value = rule.message_fr || '';
+  document.getElementById('auto-msg-en').value = rule.message_en || '';
+  onAutoTriggerChange();
+  onAutoActionChange();
+  if (rule.condition) {
+    if (rule.condition.from) document.getElementById('auto-from').value = rule.condition.from;
+    if (rule.condition.to) document.getElementById('auto-to').value = rule.condition.to;
+  }
+  document.getElementById('automation-modal').style.display = 'flex';
+}
+
+function closeAutomationModal() {
+  document.getElementById('automation-modal').style.display = 'none';
+}
+
+function onAutoTriggerChange() {
+  var trigger = document.getElementById('auto-trigger').value;
+  var condDiv = document.getElementById('auto-conditions');
+  if (trigger === 'overdue' || trigger === 'approaching_deadline' || trigger === 'assignment_change') {
+    condDiv.style.display = 'none';
+  } else {
+    condDiv.style.display = 'flex';
+    var fromSel = document.getElementById('auto-from');
+    var toSel = document.getElementById('auto-to');
+    var anyLabel = t('conditionAny');
+    var options = [];
+    if (trigger === 'status_change') {
+      var statuses = getKanbanStatuses();
+      options = statuses.map(function(s) { return { value: s.key, label: currentLang === 'fr' ? s.label_fr : s.label_en }; });
+    } else if (trigger === 'priority_change') {
+      options = [
+        { value: 'high', label: currentLang === 'fr' ? 'Haute' : 'High' },
+        { value: 'medium', label: currentLang === 'fr' ? 'Moyenne' : 'Medium' },
+        { value: 'low', label: currentLang === 'fr' ? 'Basse' : 'Low' }
+      ];
+    }
+    var optHtml = '<option value="">' + anyLabel + '</option>';
+    for (var o = 0; o < options.length; o++) {
+      optHtml += '<option value="' + options[o].value + '">' + options[o].label + '</option>';
+    }
+    fromSel.innerHTML = optHtml;
+    toSel.innerHTML = optHtml;
+  }
+}
+
+function onAutoActionChange() {
+  var action = document.getElementById('auto-action').value;
+  document.getElementById('auto-target-wrap').style.display = action === 'notify_specific' ? 'block' : 'none';
+}
+
+async function saveAutomationRuleFromModal() {
+  var rule = {
+    id: (_editingRuleIndex !== null && automationRules[_editingRuleIndex]) ? automationRules[_editingRuleIndex].id : 'rule_' + Date.now(),
+    enabled: (_editingRuleIndex !== null && automationRules[_editingRuleIndex]) ? automationRules[_editingRuleIndex].enabled : true,
+    trigger: document.getElementById('auto-trigger').value,
+    condition: {},
+    action: document.getElementById('auto-action').value,
+    action_target: document.getElementById('auto-target').value.trim(),
+    message_fr: document.getElementById('auto-msg-fr').value.trim(),
+    message_en: document.getElementById('auto-msg-en').value.trim()
+  };
+  var fromVal = document.getElementById('auto-from').value;
+  var toVal = document.getElementById('auto-to').value;
+  if (fromVal) rule.condition.from = fromVal;
+  if (toVal) rule.condition.to = toVal;
+
+  if (!rule.message_fr && !rule.message_en) {
+    rule.message_fr = 'La tâche "{title}" a changé';
+    rule.message_en = 'Task "{title}" changed';
+  }
+
+  if (_editingRuleIndex !== null) {
+    automationRules[_editingRuleIndex] = rule;
+  } else {
+    automationRules.push(rule);
+  }
+  await saveSetting('automation_rules', JSON.stringify(automationRules));
+  closeAutomationModal();
+  renderAutomationsSection();
+  showToast(t(_editingRuleIndex !== null ? 'ruleSaved' : 'ruleCreated'), 'success');
+}
+
+async function deleteAutomationRule(index) {
+  automationRules.splice(index, 1);
+  await saveSetting('automation_rules', JSON.stringify(automationRules));
+  renderAutomationsSection();
+  showToast(t('ruleDeleted'), 'info');
+}
+
+async function toggleAutomationRule(index, enabled) {
+  automationRules[index].enabled = enabled;
+  await saveSetting('automation_rules', JSON.stringify(automationRules));
+  renderAutomationsSection();
+}
+
+async function addDefaultAutomationRules() {
+  automationRules = [
+    {
+      id: 'rule_default_1', enabled: true, trigger: 'status_change',
+      condition: { to: 'done' }, action: 'notify_assignee',
+      message_fr: 'La tâche "{title}" est terminée', message_en: 'Task "{title}" is completed'
+    },
+    {
+      id: 'rule_default_2', enabled: true, trigger: 'priority_change',
+      condition: { to: 'high' }, action: 'notify_project_lead',
+      message_fr: 'La tâche "{title}" est passée en priorité haute', message_en: 'Task "{title}" priority changed to high'
+    },
+    {
+      id: 'rule_default_3', enabled: true, trigger: 'overdue',
+      condition: {}, action: 'notify_assignee',
+      message_fr: 'La tâche "{title}" est en retard !', message_en: 'Task "{title}" is overdue!'
+    }
+  ];
+  await saveSetting('automation_rules', JSON.stringify(automationRules));
+  renderAutomationsSection();
+  showToast(t('ruleCreated'), 'success');
 }
 
 async function renderSecuritySection() {
@@ -7972,13 +8304,13 @@ async function deleteTag(tagId) {
 }
 
 // =============================================================================
-// NOTIFICATIONS / ALERTS
+// NOTIFICATIONS / ALERTS + AUTOMATION ENGINE
 // =============================================================================
 
 function getOverdueTasks() {
   var now = Math.floor(Date.now() / 1000);
   return getFilteredTasks().filter(function(t) {
-    return t.Due_Date && t.Due_Date < now && t.Status !== 'done';
+    return t.Due_Date && t.Due_Date < now && t.Status !== 'done' && t.Status !== 'archived';
   });
 }
 
@@ -7986,14 +8318,30 @@ function getUpcomingTasks() {
   var now = Math.floor(Date.now() / 1000);
   var threeDays = now + (3 * 24 * 60 * 60);
   return getFilteredTasks().filter(function(t) {
-    return t.Due_Date && t.Due_Date >= now && t.Due_Date <= threeDays && t.Status !== 'done';
+    return t.Due_Date && t.Due_Date >= now && t.Due_Date <= threeDays && t.Status !== 'done' && t.Status !== 'archived';
   });
 }
 
+function getMyNotifications() {
+  var email = (currentUserEmail || '').toLowerCase().trim();
+  if (!email) return [];
+  return pmNotifications
+    .filter(function(n) { return (n.User_Email || '').toLowerCase().trim() === email; })
+    .sort(function(a, b) { return (b.Created_At || 0) - (a.Created_At || 0); });
+}
+
+function getUnreadCount() {
+  return getMyNotifications().filter(function(n) { return !n.Is_Read; }).length;
+}
+
 function updateNotificationBadge() {
-  var overdue = getOverdueTasks();
-  var upcoming = getUpcomingTasks();
-  var total = overdue.length + upcoming.length;
+  var unread = getUnreadCount();
+  var hasOverdueRule = automationRules.some(function(r) { return r.enabled && r.trigger === 'overdue'; });
+  var hasApproachingRule = automationRules.some(function(r) { return r.enabled && r.trigger === 'approaching_deadline'; });
+  var computed = 0;
+  if (!hasOverdueRule) computed += getOverdueTasks().length;
+  if (!hasApproachingRule) computed += getUpcomingTasks().length;
+  var total = unread + computed;
   var badge = document.getElementById('notif-badge');
   if (badge) {
     badge.textContent = total;
@@ -8002,48 +8350,76 @@ function updateNotificationBadge() {
 }
 
 function showNotifications() {
-  var overdue = getOverdueTasks();
-  var upcoming = getUpcomingTasks();
-  
+  var myNotifs = getMyNotifications();
+  var unread = myNotifs.filter(function(n) { return !n.Is_Read; });
+  var readRecent = myNotifs.filter(function(n) { return n.Is_Read; }).slice(0, 10);
+  var hasOverdueRule = automationRules.some(function(r) { return r.enabled && r.trigger === 'overdue'; });
+  var hasApproachingRule = automationRules.some(function(r) { return r.enabled && r.trigger === 'approaching_deadline'; });
+  var overdue = !hasOverdueRule ? getOverdueTasks() : [];
+  var upcoming = !hasApproachingRule ? getUpcomingTasks() : [];
+
   var html = '<div class="notif-dropdown" id="notif-dropdown">';
-  html += '<div class="notif-header">🔔 ' + t('notifications') + '</div>';
-  
-  if (overdue.length === 0 && upcoming.length === 0) {
-    html += '<div class="notif-empty">' + t('noAlerts') + '</div>';
-  } else {
-    if (overdue.length > 0) {
-      html += '<div style="padding:8px 16px;font-size:10px;color:#ef4444;font-weight:700;">⚠️ ' + overdue.length + ' ' + t('overdueTasksAlert') + '</div>';
-      for (var i = 0; i < overdue.length; i++) {
-        html += '<div class="notif-item overdue" onclick="openEditTaskModal(' + overdue[i].id + '); closeNotifications();">';
-        html += '<div class="notif-item-title">' + sanitize(overdue[i].Title) + '</div>';
-        html += '<div class="notif-item-date">📅 ' + formatDate(overdue[i].Due_Date) + '</div>';
-        html += '</div>';
-      }
-    }
-    if (upcoming.length > 0) {
-      html += '<div style="padding:8px 16px;font-size:10px;color:#f59e0b;font-weight:700;">📅 ' + upcoming.length + ' ' + t('upcomingTasksAlert') + '</div>';
-      for (var i = 0; i < upcoming.length; i++) {
-        html += '<div class="notif-item upcoming" onclick="openEditTaskModal(' + upcoming[i].id + '); closeNotifications();">';
-        html += '<div class="notif-item-title">' + sanitize(upcoming[i].Title) + '</div>';
-        html += '<div class="notif-item-date">📅 ' + formatDate(upcoming[i].Due_Date) + '</div>';
-        html += '</div>';
-      }
-    }
+  html += '<div class="notif-header" style="display:flex;justify-content:space-between;align-items:center;">';
+  html += '<span>🔔 ' + t('notifications') + '</span>';
+  if (unread.length > 0) {
+    html += '<button onclick="event.stopPropagation();markAllNotificationsRead();" style="background:#3b82f6;color:white;border:none;border-radius:4px;font-size:10px;padding:3px 8px;cursor:pointer;">' + t('markAllRead') + '</button>';
   }
   html += '</div>';
-  
-  // Remove existing dropdown
+
+  if (unread.length > 0) {
+    html += '<div style="padding:6px 16px;font-size:10px;color:#3b82f6;font-weight:700;">🔵 ' + unread.length + ' ' + t('notifUnread') + '</div>';
+    for (var ui = 0; ui < unread.length; ui++) {
+      var n = unread[ui];
+      html += '<div class="notif-item" style="display:flex;align-items:center;gap:6px;font-weight:600;" onclick="openEditTaskModal(' + n.Task_Id + '); closeNotifications();">';
+      html += '<div style="flex:1;">';
+      html += '<div class="notif-item-title">' + sanitize(n.Message) + '</div>';
+      html += '<div class="notif-item-date">' + formatDate(n.Created_At) + '</div>';
+      html += '</div>';
+      html += '<button onclick="event.stopPropagation();markNotificationRead(' + n.id + ');" style="background:none;border:none;color:#3b82f6;cursor:pointer;font-size:14px;" title="' + t('markAsRead') + '">✓</button>';
+      html += '</div>';
+    }
+  }
+
+  if (overdue.length > 0) {
+    html += '<div style="padding:6px 16px;font-size:10px;color:#ef4444;font-weight:700;">⚠️ ' + overdue.length + ' ' + t('overdueTasksAlert') + '</div>';
+    for (var oi = 0; oi < overdue.length; oi++) {
+      html += '<div class="notif-item overdue" onclick="openEditTaskModal(' + overdue[oi].id + '); closeNotifications();">';
+      html += '<div class="notif-item-title">' + sanitize(overdue[oi].Title) + '</div>';
+      html += '<div class="notif-item-date">📅 ' + formatDate(overdue[oi].Due_Date) + '</div>';
+      html += '</div>';
+    }
+  }
+  if (upcoming.length > 0) {
+    html += '<div style="padding:6px 16px;font-size:10px;color:#f59e0b;font-weight:700;">📅 ' + upcoming.length + ' ' + t('upcomingTasksAlert') + '</div>';
+    for (var upi = 0; upi < upcoming.length; upi++) {
+      html += '<div class="notif-item upcoming" onclick="openEditTaskModal(' + upcoming[upi].id + '); closeNotifications();">';
+      html += '<div class="notif-item-title">' + sanitize(upcoming[upi].Title) + '</div>';
+      html += '<div class="notif-item-date">📅 ' + formatDate(upcoming[upi].Due_Date) + '</div>';
+      html += '</div>';
+    }
+  }
+
+  if (readRecent.length > 0) {
+    html += '<div style="padding:6px 16px;font-size:10px;color:#94a3b8;font-weight:700;border-top:1px solid #e2e8f0;">📋 ' + (currentLang === 'fr' ? 'Historique' : 'History') + '</div>';
+    for (var ri = 0; ri < readRecent.length; ri++) {
+      var rn = readRecent[ri];
+      html += '<div class="notif-item" style="opacity:0.5;" onclick="openEditTaskModal(' + rn.Task_Id + '); closeNotifications();">';
+      html += '<div class="notif-item-title">' + sanitize(rn.Message) + '</div>';
+      html += '<div class="notif-item-date">' + formatDate(rn.Created_At) + '</div>';
+      html += '</div>';
+    }
+  }
+
+  if (unread.length === 0 && overdue.length === 0 && upcoming.length === 0 && readRecent.length === 0) {
+    html += '<div class="notif-empty">' + t('noAlerts') + '</div>';
+  }
+  html += '</div>';
+
   closeNotifications();
-  
-  // Add dropdown to button
   var btn = document.getElementById('notifications-btn');
   btn.style.position = 'relative';
   btn.insertAdjacentHTML('beforeend', html);
-  
-  // Close on outside click
-  setTimeout(function() {
-    document.addEventListener('click', closeNotificationsOnOutsideClick);
-  }, 10);
+  setTimeout(function() { document.addEventListener('click', closeNotificationsOnOutsideClick); }, 10);
 }
 
 function closeNotifications() {
@@ -8055,6 +8431,170 @@ function closeNotifications() {
 function closeNotificationsOnOutsideClick(e) {
   if (!e.target.closest('#notifications-btn')) {
     closeNotifications();
+  }
+}
+
+async function markNotificationRead(notifId) {
+  try {
+    await grist.docApi.applyUserActions([['UpdateRecord', NOTIFICATIONS_TABLE, notifId, { Is_Read: true }]]);
+    var n = pmNotifications.find(function(x) { return x.id === notifId; });
+    if (n) n.Is_Read = true;
+    updateNotificationBadge();
+    showNotifications();
+  } catch (e) {
+    console.error('[GristPM] Error marking notification read:', e);
+  }
+}
+
+async function markAllNotificationsRead() {
+  var myUnread = getMyNotifications().filter(function(n) { return !n.Is_Read; });
+  if (myUnread.length === 0) return;
+  try {
+    var ids = myUnread.map(function(n) { return n.id; });
+    var flags = ids.map(function() { return true; });
+    await grist.docApi.applyUserActions([['BulkUpdateRecord', NOTIFICATIONS_TABLE, ids, { Is_Read: flags }]]);
+    myUnread.forEach(function(n) { n.Is_Read = true; });
+    updateNotificationBadge();
+    showNotifications();
+  } catch (e) {
+    console.error('[GristPM] Error marking all read:', e);
+  }
+}
+
+// --- Automation Engine ---
+
+async function createNotification(taskId, userEmail, type, message, ruleId) {
+  try {
+    var record = {
+      Task_Id: taskId,
+      User_Email: userEmail,
+      Type: type,
+      Message: message,
+      Is_Read: false,
+      Created_At: Math.floor(Date.now() / 1000),
+      Rule_Id: ruleId || ''
+    };
+    await grist.docApi.applyUserActions([['AddRecord', NOTIFICATIONS_TABLE, null, record]]);
+    record.id = pmNotifications.length > 0 ? Math.max.apply(null, pmNotifications.map(function(n) { return n.id; })) + 1 : 1;
+    pmNotifications.push(record);
+  } catch (e) {
+    console.error('[GristPM] Error creating notification:', e);
+  }
+}
+
+function resolveRecipients(action, actionTarget, task) {
+  if (action === 'notify_assignee') {
+    return (task.Assignee || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+  if (action === 'notify_project_lead') {
+    return users.filter(function(u) { return u.Role === 'admin'; }).map(function(u) { return u.Email; }).filter(Boolean);
+  }
+  if (action === 'notify_specific' && actionTarget) {
+    return [actionTarget];
+  }
+  if (action === 'notify_all') {
+    return users.map(function(u) { return u.Email; }).filter(Boolean);
+  }
+  return [];
+}
+
+function renderAutoMessage(template, task) {
+  var statusLabel = '';
+  var statuses = getKanbanStatuses();
+  for (var si = 0; si < statuses.length; si++) {
+    if (statuses[si].key === task.Status) {
+      statusLabel = currentLang === 'fr' ? statuses[si].label_fr : statuses[si].label_en;
+      break;
+    }
+  }
+  return (template || '')
+    .replace(/\{title\}/g, task.Title || '')
+    .replace(/\{status\}/g, statusLabel || task.Status || '')
+    .replace(/\{priority\}/g, task.Priority || '')
+    .replace(/\{assignee\}/g, task.Assignee || '');
+}
+
+async function evaluateAutomationRules(task, changes) {
+  if (!automationRules || automationRules.length === 0) return;
+  for (var i = 0; i < automationRules.length; i++) {
+    var rule = automationRules[i];
+    if (!rule.enabled) continue;
+    var triggered = false;
+
+    if (rule.trigger === 'status_change' && changes.status) {
+      var mf = !rule.condition || !rule.condition.from || rule.condition.from === changes.status.from;
+      var mt = !rule.condition || !rule.condition.to || rule.condition.to === changes.status.to;
+      triggered = mf && mt;
+    } else if (rule.trigger === 'priority_change' && changes.priority) {
+      var mf2 = !rule.condition || !rule.condition.from || rule.condition.from === changes.priority.from;
+      var mt2 = !rule.condition || !rule.condition.to || rule.condition.to === changes.priority.to;
+      triggered = mf2 && mt2;
+    } else if (rule.trigger === 'assignment_change' && changes.assignee) {
+      triggered = true;
+    }
+
+    if (triggered) {
+      var msgTpl = currentLang === 'fr' ? (rule.message_fr || rule.message_en || '') : (rule.message_en || rule.message_fr || '');
+      var message = renderAutoMessage(msgTpl, task);
+      var recipients = resolveRecipients(rule.action, rule.action_target, task);
+      for (var r = 0; r < recipients.length; r++) {
+        await createNotification(task.id, recipients[r], rule.trigger, message, rule.id);
+      }
+    }
+  }
+  updateNotificationBadge();
+}
+
+async function checkTimeBasedAutomations() {
+  if (!automationRules || automationRules.length === 0) return;
+  var now = Math.floor(Date.now() / 1000);
+  var todayStart = now - (now % 86400);
+  var threeDays = now + (3 * 24 * 60 * 60);
+
+  for (var i = 0; i < automationRules.length; i++) {
+    var rule = automationRules[i];
+    if (!rule.enabled) continue;
+    if (rule.trigger !== 'overdue' && rule.trigger !== 'approaching_deadline') continue;
+
+    var matching = tasks.filter(function(t) {
+      if (t.Status === 'done' || t.Status === 'archived' || !t.Due_Date) return false;
+      if (rule.trigger === 'overdue') return t.Due_Date < now;
+      return t.Due_Date >= now && t.Due_Date <= threeDays;
+    });
+
+    for (var j = 0; j < matching.length; j++) {
+      var task = matching[j];
+      var recipients = resolveRecipients(rule.action, rule.action_target, task);
+      for (var r = 0; r < recipients.length; r++) {
+        var already = pmNotifications.some(function(n) {
+          return n.Rule_Id === rule.id && n.Task_Id === task.id && n.User_Email === recipients[r] && n.Created_At >= todayStart;
+        });
+        if (already) continue;
+        var msgTpl = currentLang === 'fr' ? (rule.message_fr || rule.message_en || '') : (rule.message_en || rule.message_fr || '');
+        var message = renderAutoMessage(msgTpl, task);
+        await createNotification(task.id, recipients[r], rule.trigger, message, rule.id);
+      }
+    }
+  }
+  updateNotificationBadge();
+}
+
+async function cleanupOldNotifications() {
+  var now = Math.floor(Date.now() / 1000);
+  var thirtyDays = 30 * 86400;
+  var ninetyDays = 90 * 86400;
+  var toDelete = pmNotifications.filter(function(n) {
+    var age = now - (n.Created_At || 0);
+    return (n.Is_Read && age > thirtyDays) || age > ninetyDays;
+  });
+  if (toDelete.length === 0) return;
+  try {
+    var ids = toDelete.map(function(n) { return n.id; });
+    var actions = ids.map(function(id) { return ['RemoveRecord', NOTIFICATIONS_TABLE, id]; });
+    await grist.docApi.applyUserActions(actions);
+    pmNotifications = pmNotifications.filter(function(n) { return ids.indexOf(n.id) === -1; });
+  } catch (e) {
+    console.log('[GristPM] Notification cleanup skipped:', e.message);
   }
 }
 
@@ -8260,6 +8800,9 @@ if (!isInsideGrist()) {
     await ensureTables();
     await loadSettings();
     await loadAllData();
+    updateNotificationBadge();
+    await checkTimeBasedAutomations();
+    await cleanupOldNotifications();
     updateNotificationBadge();
     restoreActiveTab();
   })();
