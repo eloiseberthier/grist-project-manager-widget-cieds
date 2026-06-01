@@ -281,6 +281,17 @@ var i18n = {
     burnRemaining: 'Restantes',
     burnCompleted: 'Terminées',
     burnIdeal: 'Idéal',
+    activityLog: 'Journal d\'activité',
+    activityLogSubtitle: 'Historique des actions récentes',
+    actTaskCreated: 'a créé la tâche',
+    actTaskUpdated: 'a modifié la tâche',
+    actTaskDeleted: 'a supprimé la tâche',
+    actStatusChanged: 'a changé le statut de',
+    actTaskArchived: 'a archivé la tâche',
+    actTaskRestored: 'a restauré la tâche',
+    actCommentAdded: 'a commenté sur',
+    actNoActivity: 'Aucune activité récente',
+    actLoadMore: 'Voir plus',
     edit: 'Modifier',
     required: 'requis',
     tag: 'Tag',
@@ -593,6 +604,17 @@ var i18n = {
     burnRemaining: 'Remaining',
     burnCompleted: 'Completed',
     burnIdeal: 'Ideal',
+    activityLog: 'Activity Log',
+    activityLogSubtitle: 'Recent actions history',
+    actTaskCreated: 'created task',
+    actTaskUpdated: 'updated task',
+    actTaskDeleted: 'deleted task',
+    actStatusChanged: 'changed status of',
+    actTaskArchived: 'archived task',
+    actTaskRestored: 'restored task',
+    actCommentAdded: 'commented on',
+    actNoActivity: 'No recent activity',
+    actLoadMore: 'Load more',
     edit: 'Edit',
     required: 'required',
     tag: 'Tag',
@@ -786,6 +808,8 @@ var PROJECTS_TABLE = 'PM_Projects';
 var CONFIG_TABLE = 'PM_Config';
 var SETTINGS_TABLE = 'PM_Settings';
 var NOTIFICATIONS_TABLE = 'PM_Notifications';
+var ACTIVITY_LOG_TABLE = 'PM_ActivityLog';
+var activityLog = [];
 
 // Default table names — used to detect remapping: if a table var differs from
 // its default it means the user mapped it to an existing table, so we must NOT
@@ -1670,6 +1694,19 @@ async function ensureTables() {
       ]);
     }
 
+    if (existingTables.indexOf(ACTIVITY_LOG_TABLE) === -1) {
+      await grist.docApi.applyUserActions([
+        ['AddTable', ACTIVITY_LOG_TABLE, [
+          { id: 'Timestamp', type: 'Date' },
+          { id: 'User_Email', type: 'Text' },
+          { id: 'Action', type: 'Text' },
+          { id: 'Task_Id', type: 'Int' },
+          { id: 'Task_Title', type: 'Text' },
+          { id: 'Details', type: 'Text' }
+        ]]
+      ]);
+    }
+
     // Migration: Add missing columns to existing PM_Tasks table
     if (existingTables.indexOf(TASKS_TABLE) !== -1) {
       try {
@@ -2077,6 +2114,26 @@ async function loadAllData() {
     }
   } catch (e) {
     pmNotifications = [];
+  }
+
+  try {
+    var logData = await grist.docApi.fetchTable(ACTIVITY_LOG_TABLE);
+    activityLog = [];
+    if (logData && logData.id) {
+      for (var ai = 0; ai < logData.id.length; ai++) {
+        activityLog.push({
+          id: logData.id[ai],
+          Timestamp: logData.Timestamp ? logData.Timestamp[ai] : null,
+          User_Email: logData.User_Email ? logData.User_Email[ai] : '',
+          Action: logData.Action ? logData.Action[ai] : '',
+          Task_Id: logData.Task_Id ? logData.Task_Id[ai] : null,
+          Task_Title: logData.Task_Title ? logData.Task_Title[ai] : '',
+          Details: logData.Details ? logData.Details[ai] : ''
+        });
+      }
+    }
+  } catch (e) {
+    activityLog = [];
   }
 
   renderProjectSelector();
@@ -3237,6 +3294,7 @@ async function archiveTask(taskId) {
     await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'archived' }]]);
     if (task) task.Status = 'archived';
     showToast(currentLang === 'fr' ? 'Tâche archivée' : 'Task archived', 'success');
+    logActivity('task_archived', taskId, task ? task.Title : '', '');
     if (task && oldStatus !== 'archived') {
       await evaluateAutomationRules(Object.assign({}, task, { Status: 'archived' }), { status: { from: oldStatus, to: 'archived' } });
     }
@@ -3254,6 +3312,7 @@ async function restoreTask(taskId) {
     await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, { [statusCol]: 'todo' }]]);
     if (task) task.Status = 'todo';
     showToast(currentLang === 'fr' ? 'Tâche restaurée' : 'Task restored', 'success');
+    logActivity('task_restored', taskId, task ? task.Title : '', '');
     if (task && oldStatus !== 'todo') {
       await evaluateAutomationRules(Object.assign({}, task, { Status: 'todo' }), { status: { from: oldStatus, to: 'todo' } });
     }
@@ -3357,6 +3416,7 @@ async function onDrop(e) {
         if (Object.keys(dropChanges).length > 0) {
           await evaluateAutomationRules(Object.assign({}, draggedTask, record), dropChanges);
         }
+        logActivity('status_changed', draggedTaskId, draggedTask.Title, oldVal + ' → ' + newValue);
       }
       refreshAllViews();
     } catch (err) {
@@ -5845,6 +5905,8 @@ async function addComment(taskId) {
     ]);
     textarea.value = '';
     showToast(t('commentAdded'), 'success');
+    var commentTask = tasks.find(function(t2) { return t2.id === taskId; });
+    logActivity('comment_added', taskId, commentTask ? commentTask.Title : '', content.substring(0, 80));
     await loadAllData();
     editAssignees = savedAssignees;
     editAccountable = savedAccountable;
@@ -6325,6 +6387,7 @@ async function createTask() {
     ]);
     var newTaskId = (createResult && createResult.retValues && createResult.retValues[0]) || null;
     showToast(t('taskCreated'), 'success');
+    logActivity('task_created', newTaskId, title, '');
     closeModalForce();
     await loadAllData();
     if (newTaskId) {
@@ -6386,10 +6449,10 @@ async function updateTask(taskId) {
       ['UpdateRecord', TASKS_TABLE, taskId, record]
     ]);
     showToast(t('taskUpdated'), 'success');
-
+    var logDetails = [];
     var autoChanges = {};
     if (task) {
-      if (task.Status !== newStatus) autoChanges.status = { from: task.Status, to: newStatus };
+      if (task.Status !== newStatus) { autoChanges.status = { from: task.Status, to: newStatus }; logDetails.push(task.Status + ' → ' + newStatus); }
       var newPriority = document.getElementById('task-priority').value;
       if (task.Priority !== newPriority) autoChanges.priority = { from: task.Priority, to: newPriority };
       var newAssignee = editAssignees.join(', ');
@@ -6398,6 +6461,7 @@ async function updateTask(taskId) {
     if (Object.keys(autoChanges).length > 0) {
       await evaluateAutomationRules(Object.assign({}, task, record, { id: taskId }), autoChanges);
     }
+    logActivity(autoChanges.status ? 'status_changed' : 'task_updated', taskId, title, logDetails.join(', '));
 
     // Create next occurrence if task is recurring and just completed
     if (newStatus === 'done' && wasNotDone && newRecurrence && newRecurrence !== 'none') {
@@ -6421,7 +6485,9 @@ async function deleteTask(taskId) {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', TASKS_TABLE, taskId]
     ]);
+    var deletedTask = tasks.find(function(t2) { return t2.id === taskId; });
     showToast(t('taskDeleted'), 'info');
+    logActivity('task_deleted', taskId, deletedTask ? deletedTask.Title : '', '');
     await loadAllData();
   } catch (e) {
     console.error('Error deleting task:', e);
@@ -6737,6 +6803,7 @@ function renderStatsView() {
   // Workload chart - Risk of overload per user
   renderWorkloadChart();
   renderBurndownChart();
+  renderActivityLog();
 }
 
 function renderWorkloadChart() {
@@ -7038,6 +7105,97 @@ function renderBurndownChart() {
   html += '</div>';
 
   html += '</div>';
+  container.innerHTML = html;
+}
+
+// =============================================================================
+// ACTIVITY LOG
+// =============================================================================
+
+async function logActivity(action, taskId, taskTitle, details) {
+  try {
+    var record = {
+      Timestamp: Math.floor(Date.now() / 1000),
+      User_Email: currentUserEmail || 'unknown',
+      Action: action,
+      Task_Id: taskId || 0,
+      Task_Title: taskTitle || '',
+      Details: details || ''
+    };
+    await grist.docApi.applyUserActions([['AddRecord', ACTIVITY_LOG_TABLE, null, record]]);
+    activityLog.push(record);
+  } catch (e) {
+    console.log('[GristPM] Activity log skipped:', e.message);
+  }
+}
+
+var _activityLogLimit = 20;
+
+function renderActivityLog() {
+  var container = document.getElementById('activity-log-list');
+  if (!container) return;
+
+  var sorted = activityLog.slice().sort(function(a, b) { return (b.Timestamp || 0) - (a.Timestamp || 0); });
+  var shown = sorted.slice(0, _activityLogLimit);
+
+  if (shown.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">' + t('actNoActivity') + '</div>';
+    return;
+  }
+
+  var ACTION_ICONS = {
+    task_created: '🆕',
+    task_updated: '✏️',
+    task_deleted: '🗑️',
+    status_changed: '🔄',
+    task_archived: '📦',
+    task_restored: '♻️',
+    comment_added: '💬'
+  };
+
+  var ACTION_I18N = {
+    task_created: 'actTaskCreated',
+    task_updated: 'actTaskUpdated',
+    task_deleted: 'actTaskDeleted',
+    status_changed: 'actStatusChanged',
+    task_archived: 'actTaskArchived',
+    task_restored: 'actTaskRestored',
+    comment_added: 'actCommentAdded'
+  };
+
+  var html = '';
+  var lastDateStr = '';
+  for (var i = 0; i < shown.length; i++) {
+    var entry = shown[i];
+    var dateObj = entry.Timestamp ? new Date(entry.Timestamp * 1000) : new Date();
+    var dateStr = dateObj.toLocaleDateString(currentLang === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+    if (dateStr !== lastDateStr) {
+      html += '<div style="font-size:11px;font-weight:700;color:#94a3b8;padding:8px 0 4px;border-bottom:1px solid #f1f5f9;text-transform:capitalize;">' + dateStr + '</div>';
+      lastDateStr = dateStr;
+    }
+    var icon = ACTION_ICONS[entry.Action] || '📋';
+    var actionText = t(ACTION_I18N[entry.Action] || entry.Action);
+    var userName = getUserDisplayName(entry.User_Email);
+    var timeStr = dateObj.toLocaleTimeString(currentLang === 'fr' ? 'fr-FR' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+
+    html += '<div class="activity-entry" style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f8fafc;"';
+    if (entry.Task_Id) html += ' onclick="openEditTaskModal(' + entry.Task_Id + ')" style="cursor:pointer;"';
+    html += '>';
+    html += '<span style="font-size:16px;flex-shrink:0;margin-top:2px;">' + icon + '</span>';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:13px;"><strong>' + sanitize(userName) + '</strong> ' + actionText;
+    if (entry.Task_Title) html += ' <span style="color:#3b82f6;font-weight:600;">' + sanitize(entry.Task_Title) + '</span>';
+    html += '</div>';
+    if (entry.Details) html += '<div style="font-size:11px;color:#64748b;margin-top:2px;">' + sanitize(entry.Details) + '</div>';
+    html += '</div>';
+    html += '<span style="font-size:10px;color:#94a3b8;white-space:nowrap;margin-top:3px;">' + timeStr + '</span>';
+    html += '</div>';
+  }
+
+  if (sorted.length > _activityLogLimit) {
+    html += '<div style="text-align:center;padding:12px;"><button class="btn btn-secondary btn-sm" onclick="_activityLogLimit+=20;renderActivityLog();">' + t('actLoadMore') + '</button></div>';
+  }
+
   container.innerHTML = html;
 }
 
@@ -7372,7 +7530,8 @@ var PM_ACL_RULES = [
   { tableId: 'PM_Groups',          ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
   { tableId: 'PM_Projects',        ownerPerms: '+CRUDS', editorPerms: '+R-CUD' },
   { tableId: 'PM_UserInfo',        ownerPerms: '+CRUDS', editorPerms: '+RCUD' },
-  { tableId: 'PM_Notifications',   ownerPerms: '+CRUDS', editorPerms: '+RCUD' }
+  { tableId: 'PM_Notifications',   ownerPerms: '+CRUDS', editorPerms: '+RCUD' },
+  { tableId: 'PM_ActivityLog',     ownerPerms: '+CRUDS', editorPerms: '+RC-UD' }
 ];
 
 async function checkSecurityStatus() {
