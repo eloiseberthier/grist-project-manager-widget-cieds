@@ -3275,6 +3275,24 @@ function renderTaskCard(task) {
     html += '</div>';
   }
 
+  if ((cd.category && task.Category) || (cd.tags && task.Tag)) {
+    html += '<div class="task-card-row" style="gap:6px;flex-wrap:wrap;">';
+    if (cd.category && task.Category) {
+      var catObj = categories.find(function(c) { return c.Name === task.Category; });
+      var catColor = catObj ? catObj.Color : '#6366f1';
+      html += '<span style="font-size:10px;color:' + catColor + ';font-weight:700;">| ' + sanitize(task.Category) + '</span>';
+    }
+    if (cd.tags && task.Tag) {
+      var tagList = task.Tag.split(',').map(function(tg) { return tg.trim(); }).filter(Boolean);
+      for (var ti = 0; ti < tagList.length; ti++) {
+        var tagObj = tags.find(function(tg) { return tg.Name === tagList[ti]; });
+        var tagColor = tagObj ? tagObj.Color : '#94a3b8';
+        html += '<span style="font-size:10px;padding:1px 6px;border:1px solid ' + tagColor + '40;border-radius:4px;color:' + tagColor + ';font-weight:600;">' + sanitize(tagList[ti]) + '</span>';
+      }
+    }
+    html += '</div>';
+  }
+
   if (task.Status === 'done') {
     html += '<div class="task-card-row" style="justify-content:flex-end;"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();archiveTask(' + task.id + ')" title="' + (currentLang === 'fr' ? 'Archiver' : 'Archive') + '">📦 ' + (currentLang === 'fr' ? 'Archiver' : 'Archive') + '</button></div>';
   }
@@ -4299,19 +4317,21 @@ function openCategoriesModal() {
       html += '<div class="cf-list-item">';
       html += '<span class="category-color-dot" style="background:' + (cat.Color || '#6366f1') + ';"></span>';
       html += '<span class="cf-list-name">' + sanitize(cat.Name) + '</span>';
+      html += '<button class="cf-delete-btn" onclick="editCategory(' + cat.id + ',\'' + sanitize(cat.Name).replace(/'/g, "\\'") + '\',\'' + (cat.Color || '#6366f1') + '\')">✏️</button>';
       html += '<button class="cf-delete-btn" onclick="deleteCategory(' + cat.id + ')">🗑️</button>';
       html += '</div>';
     }
   }
   html += '</div>';
   
-  // Add new category form
+  // Add / edit category form
   html += '<div class="cf-add-form">';
-  html += '<h4>' + t('addCategory') + '</h4>';
+  html += '<h4 id="cat-form-title">' + t('addCategory') + '</h4>';
+  html += '<input type="hidden" id="edit-cat-id" value="" />';
   html += '<div class="cf-form-row">';
   html += '<input type="text" id="new-cat-name" placeholder="' + t('fieldName') + '" class="cf-form-input" />';
   html += '<input type="color" id="new-cat-color" value="#6366f1" style="width:40px;height:36px;border:none;cursor:pointer;" />';
-  html += '<button class="btn btn-primary" onclick="addCategory()">' + t('addCategory') + '</button>';
+  html += '<button class="btn btn-primary" onclick="saveCategory()">' + t('save') + '</button>';
   html += '</div>';
   html += '</div>';
   
@@ -4320,24 +4340,36 @@ function openCategoriesModal() {
   document.getElementById('modal-container').innerHTML = html;
 }
 
-async function addCategory() {
+function editCategory(catId, name, color) {
+  document.getElementById('edit-cat-id').value = catId;
+  document.getElementById('new-cat-name').value = name;
+  document.getElementById('new-cat-color').value = color;
+  document.getElementById('cat-form-title').textContent = t('edit');
+}
+
+async function saveCategory() {
   var name = document.getElementById('new-cat-name').value.trim();
   var color = document.getElementById('new-cat-color').value;
-  
+  var editId = document.getElementById('edit-cat-id').value;
+
   if (!name) return;
-  
-  var maxOrder = categories.length > 0 ? Math.max.apply(null, categories.map(function(c) { return c.Order || 0; })) : 0;
-  
+
   try {
-    var record = {};
-    setField(record, 'categories', 'name', name);
-    setField(record, 'categories', 'color', color);
-    setField(record, 'categories', 'order', maxOrder + 1);
-    
-    await grist.docApi.applyUserActions([
-      ['AddRecord', CATEGORIES_TABLE, null, record]
-    ]);
-    showToast(t('categoryCreated'), 'success');
+    if (editId) {
+      var updateRec = {};
+      setField(updateRec, 'categories', 'name', name);
+      setField(updateRec, 'categories', 'color', color);
+      await grist.docApi.applyUserActions([['UpdateRecord', CATEGORIES_TABLE, parseInt(editId), updateRec]]);
+      showToast(t('saved'), 'success');
+    } else {
+      var maxOrder = categories.length > 0 ? Math.max.apply(null, categories.map(function(c) { return c.Order || 0; })) : 0;
+      var record = {};
+      setField(record, 'categories', 'name', name);
+      setField(record, 'categories', 'color', color);
+      setField(record, 'categories', 'order', maxOrder + 1);
+      await grist.docApi.applyUserActions([['AddRecord', CATEGORIES_TABLE, null, record]]);
+      showToast(t('categoryCreated'), 'success');
+    }
     closeModalForce();
     await loadAllData();
     refreshAllViews();
@@ -4968,6 +5000,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
   if (task.Group_Name) html += '<span style="font-size:12px;color:#64748b;">' + sanitize(task.Group_Name) + '</span>';
   html += '<span class="status-badge status-' + task.Status + '">● ' + statusLabel(task.Status) + '</span>';
   html += '<div style="flex:1;"></div>';
+  html += '<button class="btn btn-primary" onclick="updateTask(' + task.id + ')" style="padding:6px 16px;font-size:12px;border-radius:8px;margin-right:8px;">💾 ' + t('save') + '</button>';
   html += '<button class="modal-close" onclick="closeModalForce()">✕</button>';
   html += '</div>';
 
@@ -5613,17 +5646,17 @@ async function addSubtask(parentTaskId) {
   var title = input.value.trim();
   if (!title) return;
 
-  // Save current form state before reload
   var savedAssignees = editAssignees.slice();
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
 
   var taskSubtasks = getTaskSubtasks(parentTaskId);
   var maxOrder = taskSubtasks.length > 0 ? Math.max.apply(null, taskSubtasks.map(function(st) { return st.Order || 0; })) : 0;
 
   try {
-    var stResult = await grist.docApi.applyUserActions([
+    await grist.docApi.applyUserActions([
       ['AddRecord', SUBTASKS_TABLE, null, {
         Parent_Task_Id: parentTaskId,
         Title: title,
@@ -5632,7 +5665,6 @@ async function addSubtask(parentTaskId) {
         Created_At: Math.floor(Date.now() / 1000)
       }]
     ]);
-    var newStId = (stResult && stResult.retValues && stResult.retValues[0]) || null;
     input.value = '';
     await loadAllData();
     editAssignees = savedAssignees;
@@ -5640,13 +5672,23 @@ async function addSubtask(parentTaskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
-    if (newStId) {
-      setTimeout(function() { startEditSubtask(newStId); }, 100);
-    }
+    restoreModalScrollTop(scrollPos);
   } catch (e) {
     console.error('Error adding subtask:', e);
     showToast('Error: ' + e.message, 'error');
   }
+}
+
+function getModalScrollTop() {
+  var modal = document.querySelector('#modal-container .modal');
+  return modal ? modal.scrollTop : 0;
+}
+
+function restoreModalScrollTop(pos) {
+  setTimeout(function() {
+    var modal = document.querySelector('#modal-container .modal');
+    if (modal) modal.scrollTop = pos;
+  }, 50);
 }
 
 async function toggleSubtask(subtaskId, completed) {
@@ -5654,8 +5696,8 @@ async function toggleSubtask(subtaskId, completed) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
   try {
-    // Sync Completed boolean AND Status field
     var newStatus = completed ? 'done' : 'todo';
     await grist.docApi.applyUserActions([
       ['UpdateRecord', SUBTASKS_TABLE, subtaskId, { Completed: completed, Status: newStatus }]
@@ -5671,10 +5713,11 @@ async function toggleSubtask(subtaskId, completed) {
     var subtask = subtasks.find(function(st) { return st.id === subtaskId; });
     if (subtask) {
       editAssignees = savedAssignees;
-    editAccountable = savedAccountable;
-    editConsulted = savedConsulted;
-    editInformed = savedInformed;
+      editAccountable = savedAccountable;
+      editConsulted = savedConsulted;
+      editInformed = savedInformed;
       openEditTaskModal(subtask.Parent_Task_Id, true);
+      restoreModalScrollTop(scrollPos);
     }
   } catch (e) {
     console.error('Error toggling subtask:', e);
@@ -5686,6 +5729,7 @@ async function deleteSubtask(subtaskId, parentTaskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', SUBTASKS_TABLE, subtaskId]
@@ -5697,6 +5741,7 @@ async function deleteSubtask(subtaskId, parentTaskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(parentTaskId, true);
+    restoreModalScrollTop(scrollPos);
   } catch (e) {
     console.error('Error deleting subtask:', e);
   }
