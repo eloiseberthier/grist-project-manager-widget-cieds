@@ -3725,6 +3725,37 @@ function ganttChevron(task) {
   return '<button type="button" class="gantt-toggle' + (expanded ? ' gantt-toggle-open' : '') + '" onclick="event.stopPropagation();toggleGanttSubtasks(' + task.id + ')" title="' + (currentLang === 'fr' ? 'Sous-tâches' : 'Subtasks') + '">' + icon + '</button>';
 }
 
+function getGanttBarClass(task) {
+  var statuses = getKanbanStatuses();
+  for (var si = 0; si < statuses.length; si++) {
+    if (statuses[si].key === task.Status && statuses[si].color) {
+      return 'gantt-bar-custom" style="background:' + statuses[si].color + ';color:white;';
+    }
+  }
+  if (isOverdue(task)) return 'gantt-bar-overdue';
+  if (task.Status === 'done') return 'gantt-bar-done';
+  if (task.Status === 'progress') return 'gantt-bar-progress';
+  return 'gantt-bar-todo';
+}
+
+function renderGanttTaskLabel(task) {
+  var dotClass = task.Priority === 'high' ? 'dot-high' : (task.Priority === 'medium' ? 'dot-medium' : 'dot-low');
+  var assigneeNames = task.Assignee ? task.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
+  var ganttProjColor = getProjectColor(task.Project_Id);
+  var ganttProjName = getProjectName(task.Project_Id);
+
+  var html = '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
+  html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> <strong>' + sanitize(task.Title) + '</strong>';
+  if (ganttProjName) html += ' <span style="display:inline-block;background:' + ganttProjColor + ';color:white;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;vertical-align:middle;">' + sanitize(ganttProjName) + '</span>';
+  html += ganttDepBadge(task) + '</div>';
+  html += '<div class="task-info">';
+  if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
+  if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
+  if (task.Due_Date) html += ' 📅 ' + formatDate(task.Due_Date);
+  html += '</div></td>';
+  return html;
+}
+
 function renderGanttView() {
   var yearSelect = document.getElementById('gantt-year');
   if (yearSelect.options.length === 0) {
@@ -3761,9 +3792,10 @@ function renderGanttView() {
 
   // ===== WEEKS MODE =====
   if (ganttMode === 'weeks') {
-    // Determine week range: show ~26 weeks (6 months) from current month
-    var startWeek = getISOWeek(new Date(ganttYear, ganttMonth, 1));
-    var numWeeks = 26;
+    var eightWeeksAgo = new Date(ganttYear, ganttMonth, 1);
+    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+    var startWeek = getISOWeek(eightWeeksAgo);
+    var numWeeks = 34;
     var weeks = [];
     for (var w = 0; w < numWeeks; w++) {
       var wn = startWeek + w;
@@ -3790,21 +3822,9 @@ function renderGanttView() {
     // Task rows
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
       var task = tasksWithDates[ti];
-      var dotClass = task.Priority === 'high' ? 'dot-high' : (task.Priority === 'medium' ? 'dot-medium' : 'dot-low');
-      var barClass = task.Status === 'done' ? 'gantt-bar-done' : (task.Status === 'progress' ? 'gantt-bar-progress' : 'gantt-bar-todo');
-      if (isOverdue(task)) barClass = 'gantt-bar-overdue';
-
-      var assigneeNames = task.Assignee ? task.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
+      var barClass = getGanttBarClass(task);
       html += '<tr>';
-      html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
-      var ganttProjColor = getProjectColor(task.Project_Id);
-      var ganttProjName = getProjectName(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> <strong>' + sanitize(task.Title) + '</strong>' + ganttDepBadge(task) + '</div>';
-      html += '<div class="task-info">';
-      if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
-      if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
-      if (ganttProjName) html += ' <span style="display:inline-block;background:' + ganttProjColor + ';color:white;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;">' + sanitize(ganttProjName) + '</span>';
-      html += '</div></td>';
+      html += renderGanttTaskLabel(task);
 
       var tStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
       var tEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
@@ -3897,21 +3917,9 @@ function renderGanttView() {
 
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
       var task = tasksWithDates[ti];
-      var dotClass = task.Priority === 'high' ? 'dot-high' : (task.Priority === 'medium' ? 'dot-medium' : 'dot-low');
-      var barClass = task.Status === 'done' ? 'gantt-bar-done' : (task.Status === 'progress' ? 'gantt-bar-progress' : 'gantt-bar-todo');
-      if (isOverdue(task)) barClass = 'gantt-bar-overdue';
-
-      var assigneeNames = task.Assignee ? task.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
+      var barClass = getGanttBarClass(task);
       html += '<tr>';
-      html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
-      var ganttProjColor = getProjectColor(task.Project_Id);
-      var ganttProjName = getProjectName(task.Project_Id);
-      html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> <strong>' + sanitize(task.Title) + '</strong>' + ganttDepBadge(task) + '</div>';
-      html += '<div class="task-info">';
-      if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
-      if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
-      if (ganttProjName) html += ' <span style="display:inline-block;background:' + ganttProjColor + ';color:white;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;">' + sanitize(ganttProjName) + '</span>';
-      html += '</div></td>';
+      html += renderGanttTaskLabel(task);
 
       var mTStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
       var mTEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
@@ -3920,21 +3928,25 @@ function renderGanttView() {
       if (mTStart) mTStart.setHours(0, 0, 0, 0);
       if (mTEnd) mTEnd.setHours(23, 59, 59, 999);
 
+      var mBarStartIdx = -1, mBarEndIdx = -1;
       for (var m = 0; m < 12; m++) {
-        var monthStart = new Date(ganttYear, m, 1);
-        var monthEnd = new Date(ganttYear, m + 1, 0, 23, 59, 59, 999);
-        var daysInMonth = new Date(ganttYear, m + 1, 0).getDate();
+        var ms = new Date(ganttYear, m, 1);
+        var me = new Date(ganttYear, m + 1, 0, 23, 59, 59, 999);
+        if (mTStart && mTEnd && mTStart <= me && mTEnd >= ms) {
+          if (mBarStartIdx === -1) mBarStartIdx = m;
+          mBarEndIdx = m;
+        }
+      }
 
-        var inRange = mTStart && mTEnd && mTStart <= monthEnd && mTEnd >= monthStart;
+      for (var m = 0; m < 12; m++) {
         var isTodayMonth = (ganttYear === todayYear && m === todayMonth);
-        html += '<td class="gantt-cell" style="position:relative;">';
+        html += '<td class="gantt-cell" style="position:relative;min-width:80px;">';
         if (isTodayMonth && todayDayPct >= 0) {
           html += '<div style="position:absolute;top:0;bottom:0;left:' + todayDayPct + '%;width:2px;background:#ef4444;z-index:1;pointer-events:none;"></div>';
         }
-        if (inRange) {
-          var barLeft = mTStart > monthStart ? Math.round((mTStart.getDate() - 1) / daysInMonth * 100) : 0;
-          var barRight = mTEnd < monthEnd ? Math.round((daysInMonth - mTEnd.getDate()) / daysInMonth * 100) : 0;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:' + barLeft + '%;right:' + barRight + '%;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + (barLeft === 0 && barRight === 0 ? sanitize(task.Title) : '') + '</div>';
+        if (m === mBarStartIdx) {
+          var mBarWidth = (mBarEndIdx - mBarStartIdx + 1) * 80;
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + mBarWidth + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
         html += '</td>';
       }
@@ -3948,20 +3960,24 @@ function renderGanttView() {
           var stRange = getGanttSubtaskRange(st, task);
           var stBarClass = ganttSubtaskBarClass(st, task);
           html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
+          var stStartM = -1, stEndM = -1;
           for (var m2 = 0; m2 < 12; m2++) {
             var mStart = new Date(ganttYear, m2, 1);
             var mEnd = new Date(ganttYear, m2 + 1, 0, 23, 59, 59, 999);
-            var mDays = new Date(ganttYear, m2 + 1, 0).getDate();
-            var stInRange = stRange.start <= mEnd && stRange.end >= mStart;
+            if (stRange.start <= mEnd && stRange.end >= mStart) {
+              if (stStartM === -1) stStartM = m2;
+              stEndM = m2;
+            }
+          }
+          for (var m2 = 0; m2 < 12; m2++) {
             var isTodayMonth2 = (ganttYear === todayYear && m2 === todayMonth);
-            html += '<td class="gantt-cell" style="position:relative;">';
+            html += '<td class="gantt-cell" style="position:relative;min-width:80px;">';
             if (isTodayMonth2 && todayDayPct >= 0) {
               html += '<div style="position:absolute;top:0;bottom:0;left:' + todayDayPct + '%;width:2px;background:#ef4444;z-index:1;pointer-events:none;"></div>';
             }
-            if (stInRange) {
-              var stL = stRange.start > mStart ? Math.round((stRange.start.getDate() - 1) / mDays * 100) : 0;
-              var stR = stRange.end < mEnd ? Math.round((mDays - stRange.end.getDate()) / mDays * 100) : 0;
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:' + stL + '%;right:' + stR + '%;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
+            if (m2 === stStartM) {
+              var stBarW = (stEndM - stStartM + 1) * 80;
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stBarW + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
             }
             html += '</td>';
           }
@@ -3981,7 +3997,7 @@ function renderGanttView() {
   }
 
   // ===== DAYS MODE =====
-  var startDate = new Date(ganttYear, ganttMonth, 1);
+  var startDate = new Date(ganttYear, ganttMonth - 1, 1);
   var endDate = new Date(ganttYear, ganttMonth + 2, 0);
   var days = [];
   var d = new Date(startDate);
@@ -3990,7 +4006,19 @@ function renderGanttView() {
     d.setDate(d.getDate() + 1);
   }
 
-  html += '<thead><tr><th class="gantt-task-label" style="text-align:left;">' + t('colTaskName') + '</th>';
+  // Month header row
+  html += '<thead><tr><th class="gantt-task-label" style="text-align:left;" rowspan="2">' + t('colTaskName') + '</th>';
+  var prevMonth = -1;
+  for (var di0 = 0; di0 < days.length; di0++) {
+    var dm = days[di0].getMonth();
+    if (dm !== prevMonth) {
+      var colspan = 0;
+      for (var di1 = di0; di1 < days.length && days[di1].getMonth() === dm; di1++) colspan++;
+      html += '<th colspan="' + colspan + '" style="font-size:11px;font-weight:700;color:#475569;background:#f8fafc;border-bottom:1px solid #e2e8f0;">' + monthNames[dm].toUpperCase() + '</th>';
+      prevMonth = dm;
+    }
+  }
+  html += '</tr><tr>';
   for (var di = 0; di < days.length; di++) {
     var dd = days[di];
     var isToday = dd.getTime() === today.getTime();
@@ -4004,19 +4032,9 @@ function renderGanttView() {
 
   for (var ti = 0; ti < tasksWithDates.length; ti++) {
     var task = tasksWithDates[ti];
-    var dotClass = task.Priority === 'high' ? 'dot-high' : (task.Priority === 'medium' ? 'dot-medium' : 'dot-low');
-    var barClass = task.Status === 'done' ? 'gantt-bar-done' : (task.Status === 'progress' ? 'gantt-bar-progress' : 'gantt-bar-todo');
-    if (isOverdue(task)) barClass = 'gantt-bar-overdue';
-
-    var assigneeNames = task.Assignee ? task.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
+    var barClass = getGanttBarClass(task);
     html += '<tr>';
-    html += '<td class="gantt-task-label gantt-clickable-label" onclick="openEditTaskModal(' + task.id + ')">';
-    html += '<div class="task-name">' + ganttChevron(task) + '<span class="priority-dot ' + dotClass + '"></span> ' + sanitize(task.Title) + '</div>';
-    html += '<div class="task-info">';
-    if (task.Priority) html += '🔥 ' + priorityLabel(task.Priority);
-    if (assigneeNames) html += ' 👤 ' + sanitize(assigneeNames);
-    if (task.Due_Date) html += ' ⏰ ' + (currentLang === 'fr' ? 'Échéance: ' : 'Due: ') + formatDate(task.Due_Date);
-    html += '</div></td>';
+    html += renderGanttTaskLabel(task);
 
     var tStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
     var tEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
