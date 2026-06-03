@@ -45,6 +45,9 @@ var i18n = {
     ganttMonths: 'Mois',
     ganttYear2: 'Année',
     ganttTwoYears: '2 Ans',
+    extensionDate: 'Date de prolongation',
+    autoExtend: 'Prolongation auto',
+    autoExtendHint: 'Prolonge automatiquement jusqu\'à la date du jour tant que la tâche n\'est pas terminée',
     ganttFullYear: 'Année complète',
     ganttNavInfo: 'Navigation infinie vers autres années',
     ganttViewRange: 'Vue :',
@@ -370,6 +373,9 @@ var i18n = {
     ganttMonths: 'Months',
     ganttYear2: 'Year',
     ganttTwoYears: '2 Years',
+    extensionDate: 'Extension date',
+    autoExtend: 'Auto extend',
+    autoExtendHint: 'Automatically extends to today until the task is completed',
     ganttFullYear: 'Full year',
     ganttNavInfo: 'Infinite navigation to other years',
     ganttViewRange: 'View:',
@@ -1743,6 +1749,13 @@ async function ensureTables() {
         if (raciActions.length > 0) {
           await grist.docApi.applyUserActions(raciActions);
         }
+        // Extension columns
+        if (existingCols.indexOf('Extension_Date') === -1) {
+          await grist.docApi.applyUserActions([['AddColumn', TASKS_TABLE, 'Extension_Date', { type: 'Date' }]]);
+        }
+        if (existingCols.indexOf('Auto_Extend') === -1) {
+          await grist.docApi.applyUserActions([['AddColumn', TASKS_TABLE, 'Auto_Extend', { type: 'Bool' }]]);
+        }
       } catch (migrationErr) {
         console.log('Migration check completed or columns already exist');
       }
@@ -1844,6 +1857,8 @@ async function loadAllData() {
         task.Accountable = taskData.Accountable ? taskData.Accountable[i] || '' : '';
         task.Consulted = taskData.Consulted ? taskData.Consulted[i] || '' : '';
         task.Informed = taskData.Informed ? taskData.Informed[i] || '' : '';
+        task.Extension_Date = taskData.Extension_Date ? taskData.Extension_Date[i] : null;
+        task.Auto_Extend = taskData.Auto_Extend ? !!taskData.Auto_Extend[i] : false;
 
         tasks.push(task);
       }
@@ -3731,6 +3746,30 @@ function ganttChevron(task) {
   return '<button type="button" class="gantt-toggle' + (expanded ? ' gantt-toggle-open' : '') + '" onclick="event.stopPropagation();toggleGanttSubtasks(' + task.id + ')" title="' + (currentLang === 'fr' ? 'Sous-tâches' : 'Subtasks') + '">' + icon + '</button>';
 }
 
+function getTaskExtensionEnd(task) {
+  if (task.Auto_Extend && task.Status !== 'done' && task.Status !== 'archived') {
+    var now = new Date(); now.setHours(23, 59, 59, 999);
+    var dueDate = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
+    if (dueDate && now > dueDate) return now;
+  }
+  if (task.Extension_Date) {
+    var ext = new Date(task.Extension_Date * 1000);
+    ext.setHours(23, 59, 59, 999);
+    return ext;
+  }
+  return null;
+}
+
+function getExtensionBarColor(task) {
+  var statuses = getKanbanStatuses();
+  for (var si = 0; si < statuses.length; si++) {
+    if (statuses[si].key === task.Status && statuses[si].color) return statuses[si].color;
+  }
+  if (task.Status === 'done') return '#22c55e';
+  if (task.Status === 'progress') return '#f59e0b';
+  return '#3b82f6';
+}
+
 function getGanttBarClass(task) {
   var statuses = getKanbanStatuses();
   for (var si = 0; si < statuses.length; si++) {
@@ -3849,6 +3888,18 @@ function renderGanttView() {
         }
       }
 
+      var extEnd = getTaskExtensionEnd(task);
+      var extStartIdx = -1, extEndIdx = -1;
+      if (extEnd && tEnd && extEnd > tEnd) {
+        for (var ewi = 0; ewi < weeks.length; ewi++) {
+          if (tEnd <= weeks[ewi].end && extEnd >= weeks[ewi].start) {
+            if (extStartIdx === -1) extStartIdx = ewi;
+            extEndIdx = ewi;
+          }
+        }
+      }
+      var extColor = getExtensionBarColor(task);
+
       for (var wi = 0; wi < weeks.length; wi++) {
         var isCurrentWeek = getISOWeek(today) === weeks[wi].num && today.getFullYear() === weeks[wi].year;
         html += '<td class="gantt-cell" style="position:relative;' + (isCurrentWeek ? 'background:#fef2f2;' : '') + '">';
@@ -3856,6 +3907,11 @@ function renderGanttView() {
           var spanCols = barEndIdx - barStartIdx + 1;
           var widthPx = spanCols * 80;
           html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        }
+        if (wi === extStartIdx && extStartIdx >= 0) {
+          var extSpan = extEndIdx - extStartIdx + 1;
+          var extW = extSpan * 80;
+          html += '<div class="gantt-bar-extension" style="left:2px;width:' + extW + 'px;border-color:' + extColor + ';background:' + extColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -3956,6 +4012,17 @@ function renderGanttView() {
         }
       }
 
+      var yExtEnd = getTaskExtensionEnd(task);
+      var yExtStart = -1, yExtEndIdx = -1;
+      if (yExtEnd && yTEnd && yExtEnd > yTEnd) {
+        for (var yme = 0; yme < totalMonths; yme++) {
+          var yre = startYr + Math.floor(yme / 12); var moe = yme % 12;
+          var mse = new Date(yre, moe, 1); var mee = new Date(yre, moe + 1, 0, 23, 59, 59, 999);
+          if (yTEnd <= mee && yExtEnd >= mse) { if (yExtStart === -1) yExtStart = yme; yExtEndIdx = yme; }
+        }
+      }
+      var yExtColor = getExtensionBarColor(task);
+
       for (var ym = 0; ym < totalMonths; ym++) {
         var yr2 = startYr + Math.floor(ym / 12);
         var mo2 = ym % 12;
@@ -3964,6 +4031,10 @@ function renderGanttView() {
         if (ym === yBarStart) {
           var yBarW = (yBarEnd - yBarStart + 1) * colWidth;
           html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + yBarW + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        }
+        if (ym === yExtStart && yExtStart >= 0) {
+          var yExtW = (yExtEndIdx - yExtStart + 1) * colWidth;
+          html += '<div class="gantt-bar-extension" style="left:2px;width:' + yExtW + 'px;border-color:' + yExtColor + ';background:' + yExtColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -4050,6 +4121,16 @@ function renderGanttView() {
         }
       }
 
+      var mExtEnd = getTaskExtensionEnd(task);
+      var mExtStart = -1, mExtEndI = -1;
+      if (mExtEnd && mTEnd && mExtEnd > mTEnd) {
+        for (var me2 = 0; me2 < 12; me2++) {
+          var ms2 = new Date(ganttYear, me2, 1); var me2e = new Date(ganttYear, me2 + 1, 0, 23, 59, 59, 999);
+          if (mTEnd <= me2e && mExtEnd >= ms2) { if (mExtStart === -1) mExtStart = me2; mExtEndI = me2; }
+        }
+      }
+      var mExtColor = getExtensionBarColor(task);
+
       for (var m = 0; m < 12; m++) {
         var isTodayMonth = (ganttYear === todayYear && m === todayMonth);
         html += '<td class="gantt-cell" style="position:relative;min-width:80px;">';
@@ -4059,6 +4140,10 @@ function renderGanttView() {
         if (m === mBarStartIdx) {
           var mBarWidth = (mBarEndIdx - mBarStartIdx + 1) * 80;
           html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + mBarWidth + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        }
+        if (m === mExtStart && mExtStart >= 0) {
+          var mExtW = (mExtEndI - mExtStart + 1) * 80;
+          html += '<div class="gantt-bar-extension" style="left:2px;width:' + mExtW + 'px;border-color:' + mExtColor + ';background:' + mExtColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -4164,6 +4249,19 @@ function renderGanttView() {
       }
     }
 
+    var dExtEnd = getTaskExtensionEnd(task);
+    var dExtStartIdx = -1, dExtEndIdx = -1;
+    if (dExtEnd && tEnd && dExtEnd > tEnd) {
+      var dExtDay = new Date(dExtEnd); dExtDay.setHours(0, 0, 0, 0);
+      for (var dei = 0; dei < days.length; dei++) {
+        if (days[dei] >= tEnd && days[dei] <= dExtDay) {
+          if (dExtStartIdx === -1) dExtStartIdx = dei;
+          dExtEndIdx = dei;
+        }
+      }
+    }
+    var dExtColor = getExtensionBarColor(task);
+
     for (var di = 0; di < days.length; di++) {
       var dd = days[di];
       var isToday = dd.getTime() === today.getTime();
@@ -4175,6 +4273,10 @@ function renderGanttView() {
         var spanDays = barEndIdx - barStartIdx + 1;
         var widthPx = spanDays * 36;
         html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+      }
+      if (di === dExtStartIdx && dExtStartIdx >= 0) {
+        var dExtW = (dExtEndIdx - dExtStartIdx + 1) * 36;
+        html += '<div class="gantt-bar-extension" style="left:2px;width:' + dExtW + 'px;border-color:' + dExtColor + ';background:' + dExtColor + '20;"></div>';
       }
       html += '</td>';
     }
@@ -5586,6 +5688,19 @@ function openEditTaskModal(taskId, preserveAssignees) {
   }
   html += '</div>';
 
+  // Extension card
+  html += '<div class="detail-card">';
+  html += '<h4>📏 ' + t('extensionDate') + '</h4>';
+  var extDateVal = task.Extension_Date ? fromEpoch(task.Extension_Date) : '';
+  html += '<div class="detail-field"><div class="detail-field-icon">📅</div><div class="detail-field-label">' + t('extensionDate') + '</div>';
+  html += '<div class="detail-field-value"><input type="date" id="task-extension-date" value="' + extDateVal + '" /></div></div>';
+  html += '<div class="detail-field"><div class="detail-field-icon">⚡</div><div class="detail-field-label">' + t('autoExtend') + '</div>';
+  html += '<div class="detail-field-value"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">';
+  html += '<input type="checkbox" id="task-auto-extend" ' + (task.Auto_Extend ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:#3b82f6;" />';
+  html += '<span style="font-size:11px;color:#64748b;">' + t('autoExtendHint') + '</span>';
+  html += '</label></div></div>';
+  html += '</div>';
+
   // Recurrence card
   var hasRecurrence = task.Recurrence && task.Recurrence !== 'none';
   html += '<div class="detail-card">';
@@ -6617,6 +6732,18 @@ async function updateTask(taskId) {
   var tagEl = document.getElementById('task-tag');
   if (tagEl) {
     setField(record, 'tasks', 'tag', tagEl.value.trim());
+  }
+
+  // Extension fields
+  var extDateEl = document.getElementById('task-extension-date');
+  if (extDateEl) record.Extension_Date = toEpoch(extDateEl.value);
+  var autoExtEl = document.getElementById('task-auto-extend');
+  if (autoExtEl) record.Auto_Extend = autoExtEl.checked;
+
+  // Auto-freeze extension date when completing a task with auto-extend
+  if (newStatus === 'done' && task && task.Auto_Extend && task.Status !== 'done') {
+    record.Extension_Date = Math.floor(Date.now() / 1000);
+    record.Auto_Extend = false;
   }
 
   try {
