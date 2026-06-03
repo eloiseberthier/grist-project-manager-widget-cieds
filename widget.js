@@ -43,6 +43,8 @@ var i18n = {
     ganttDays: 'Jours',
     ganttWeeks: 'Semaines',
     ganttMonths: 'Mois',
+    ganttYear2: 'Année',
+    ganttTwoYears: '2 Ans',
     ganttFullYear: 'Année complète',
     ganttNavInfo: 'Navigation infinie vers autres années',
     ganttViewRange: 'Vue :',
@@ -366,6 +368,8 @@ var i18n = {
     ganttDays: 'Days',
     ganttWeeks: 'Weeks',
     ganttMonths: 'Months',
+    ganttYear2: 'Year',
+    ganttTwoYears: '2 Years',
     ganttFullYear: 'Full year',
     ganttNavInfo: 'Infinite navigation to other years',
     ganttViewRange: 'View:',
@@ -3679,11 +3683,13 @@ function getGanttSubtasks(taskId) {
 
 // Construit la <td> de libellé d'une sous-tâche (indentée, allégée, cliquable)
 function renderGanttSubtaskLabelCell(st, parentTaskId) {
-  var html = '<td class="gantt-task-label gantt-subtask-cell gantt-clickable-label" onclick="openEditTaskModal(' + parentTaskId + ')">';
-  html += '<div class="gantt-subtask-name">↳ ' + sanitize(st.Title) + '</div>';
-  html += '<div class="gantt-subtask-info">⏰ ' + formatDate(st.Due_Date);
-  if (st.Assignee) html += ' · 👤 ' + sanitize(st.Assignee).substring(0, 15);
-  html += '</div></td>';
+  var completedClass = st.Completed ? ' style="text-decoration:line-through;opacity:0.5;"' : '';
+  var html = '<td class="gantt-task-label gantt-subtask-cell gantt-clickable-label" onclick="openEditTaskModal(' + parentTaskId + ')"' + completedClass + '>';
+  html += '<span style="font-size:10px;color:#94a3b8;margin-right:4px;">↳</span>';
+  html += '<span style="font-size:11px;">' + sanitize(st.Title) + '</span>';
+  if (st.Due_Date) html += '<span style="font-size:9px;color:#94a3b8;margin-left:6px;">📅 ' + formatDate(st.Due_Date) + '</span>';
+  if (st.Assignee) html += '<span style="font-size:9px;color:#94a3b8;margin-left:4px;">👤 ' + sanitize(st.Assignee).split(',')[0].trim().substring(0, 10) + '</span>';
+  html += '</td>';
   return html;
 }
 
@@ -3893,6 +3899,112 @@ function renderGanttView() {
     html += '<div class="gantt-footer">';
     html += '<span>🌟 ' + t('ganttFullYear') + ' • ' + t('ganttNavInfo') + ' • ' + tasksWithDates.length + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + '</span>';
     html += '<span>' + t('ganttViewRange') + ' ' + viewStartMonth + ' - ' + viewEndMonth + ' ' + ganttYear + '</span>';
+    html += '</div></div>';
+
+    document.getElementById('gantt-view').innerHTML = html;
+    return;
+  }
+
+  // ===== YEAR / TWOYEARS MODE =====
+  if (ganttMode === 'year' || ganttMode === 'twoyears') {
+    var numYears = ganttMode === 'twoyears' ? 2 : 1;
+    var totalMonths = numYears * 12;
+    var startYr = ganttYear;
+    var colWidth = ganttMode === 'twoyears' ? 50 : 70;
+
+    var todayMonth = today.getMonth();
+    var todayYear = today.getFullYear();
+
+    html += '<thead>';
+    if (ganttMode === 'twoyears') {
+      html += '<tr><th class="gantt-task-label" style="text-align:left;" rowspan="2">' + t('colTaskName') + '</th>';
+      html += '<th colspan="12" style="font-size:12px;font-weight:800;background:#f8fafc;">' + startYr + '</th>';
+      html += '<th colspan="12" style="font-size:12px;font-weight:800;background:#f8fafc;">' + (startYr + 1) + '</th>';
+      html += '</tr><tr>';
+    } else {
+      html += '<tr><th class="gantt-task-label" style="text-align:left;">' + t('colTaskName') + '</th>';
+    }
+    for (var ym = 0; ym < totalMonths; ym++) {
+      var yr = startYr + Math.floor(ym / 12);
+      var mo = ym % 12;
+      var isCurrent = (yr === todayYear && mo === todayMonth);
+      html += '<th style="min-width:' + colWidth + 'px;' + (isCurrent ? 'background:#fef2f2;color:#ef4444;' : '') + '">' + monthNamesShort[mo].substring(0, 3) + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+
+    for (var ti = 0; ti < tasksWithDates.length; ti++) {
+      var task = tasksWithDates[ti];
+      var barClass = getGanttBarClass(task);
+      html += '<tr>' + renderGanttTaskLabel(task);
+
+      var yTStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
+      var yTEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
+      if (!yTStart && yTEnd) yTStart = new Date(yTEnd);
+      if (!yTEnd && yTStart) yTEnd = new Date(yTStart);
+      if (yTStart) yTStart.setHours(0, 0, 0, 0);
+      if (yTEnd) yTEnd.setHours(23, 59, 59, 999);
+
+      var yBarStart = -1, yBarEnd = -1;
+      for (var ym = 0; ym < totalMonths; ym++) {
+        var yr = startYr + Math.floor(ym / 12);
+        var mo = ym % 12;
+        var ms = new Date(yr, mo, 1);
+        var me = new Date(yr, mo + 1, 0, 23, 59, 59, 999);
+        if (yTStart && yTEnd && yTStart <= me && yTEnd >= ms) {
+          if (yBarStart === -1) yBarStart = ym;
+          yBarEnd = ym;
+        }
+      }
+
+      for (var ym = 0; ym < totalMonths; ym++) {
+        var yr2 = startYr + Math.floor(ym / 12);
+        var mo2 = ym % 12;
+        var isCurrent2 = (yr2 === todayYear && mo2 === todayMonth);
+        html += '<td class="gantt-cell" style="position:relative;min-width:' + colWidth + 'px;' + (isCurrent2 ? 'background:#fef2f2;' : '') + '">';
+        if (ym === yBarStart) {
+          var yBarW = (yBarEnd - yBarStart + 1) * colWidth;
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + yBarW + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        }
+        html += '</td>';
+      }
+      html += '</tr>';
+
+      if (expandedGanttTasks[task.id]) {
+        var sts = getGanttSubtasks(task.id);
+        for (var sti = 0; sti < sts.length; sti++) {
+          var st = sts[sti];
+          var stRange = getGanttSubtaskRange(st, task);
+          var stBarClass = ganttSubtaskBarClass(st, task);
+          html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
+          var stYStart = -1, stYEnd = -1;
+          for (var ym3 = 0; ym3 < totalMonths; ym3++) {
+            var yr3 = startYr + Math.floor(ym3 / 12);
+            var mo3 = ym3 % 12;
+            var ms3 = new Date(yr3, mo3, 1);
+            var me3 = new Date(yr3, mo3 + 1, 0, 23, 59, 59, 999);
+            if (stRange.start <= me3 && stRange.end >= ms3) {
+              if (stYStart === -1) stYStart = ym3;
+              stYEnd = ym3;
+            }
+          }
+          for (var ym3 = 0; ym3 < totalMonths; ym3++) {
+            html += '<td class="gantt-cell" style="position:relative;min-width:' + colWidth + 'px;">';
+            if (ym3 === stYStart) {
+              var stYW = (stYEnd - stYStart + 1) * colWidth;
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stYW + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
+            }
+            html += '</td>';
+          }
+          html += '</tr>';
+        }
+      }
+    }
+
+    html += '</tbody></table>';
+    html += '<div class="gantt-footer">';
+    var rangeLabel = ganttMode === 'twoyears' ? (startYr + ' - ' + (startYr + 1)) : String(startYr);
+    html += '<span>🌟 ' + t('ganttFullYear') + ' • ' + tasksWithDates.length + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + '</span>';
+    html += '<span>' + t('ganttViewRange') + ' ' + rangeLabel + '</span>';
     html += '</div></div>';
 
     document.getElementById('gantt-view').innerHTML = html;
