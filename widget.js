@@ -5701,13 +5701,11 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '<div class="detail-card">';
   html += '<h4>📏 ' + t('extensionDate') + '</h4>';
   var extDateVal = task.Extension_Date ? fromEpoch(task.Extension_Date) : '';
-  html += '<div class="detail-field"><div class="detail-field-icon">📅</div><div class="detail-field-label">' + t('extensionDate') + '</div>';
-  html += '<div class="detail-field-value"><input type="date" id="task-extension-date" value="' + extDateVal + '" /></div></div>';
-  html += '<div class="detail-field"><div class="detail-field-icon">⚡</div><div class="detail-field-label">' + t('autoExtend') + '</div>';
-  html += '<div class="detail-field-value"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">';
-  html += '<input type="checkbox" id="task-auto-extend" ' + (task.Auto_Extend ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:#3b82f6;" />';
-  html += '<span style="font-size:11px;color:#64748b;">' + t('autoExtendHint') + '</span>';
-  html += '</label></div></div>';
+  html += '<div style="margin-bottom:10px;"><input type="date" id="task-extension-date" value="' + extDateVal + '" style="width:100%;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;" /></div>';
+  html += '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">';
+  html += '<input type="checkbox" id="task-auto-extend" ' + (task.Auto_Extend ? 'checked' : '') + ' style="width:16px;height:16px;accent-color:#3b82f6;flex-shrink:0;margin-top:2px;" />';
+  html += '<span style="font-size:11px;color:#64748b;line-height:1.3;">' + t('autoExtendHint') + '</span>';
+  html += '</label>';
   html += '</div>';
 
   // Recurrence card
