@@ -3950,7 +3950,7 @@ function renderGanttView() {
             if (wi2 === stStartIdx) {
               var stSpan = stEndIdx - stStartIdx + 1;
               var stWidth = stSpan * 80;
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title) + '</div>';
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
             }
             html += '</td>';
           }
@@ -4321,7 +4321,7 @@ function renderGanttView() {
           if (di2 === stBarStartIdx) {
             var stSpanDays = stBarEndIdx - stBarStartIdx + 1;
             var stWidth = stSpanDays * 36;
-            html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(st.Title) + '</div>';
+            html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
           }
           html += '</td>';
         }
