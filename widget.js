@@ -4252,11 +4252,19 @@ function renderGanttView() {
     if (tEnd) tEnd.setHours(0, 0, 0, 0);
 
     var barStartIdx = -1, barEndIdx = -1;
-    for (var di = 0; di < days.length; di++) {
-      var dday = days[di];
-      if (tStart && tEnd && dday >= tStart && dday <= tEnd) {
-        if (barStartIdx === -1) barStartIdx = di;
-        barEndIdx = di;
+    if (tStart && tEnd) {
+      for (var di = 0; di < days.length; di++) {
+        var dday = days[di];
+        if (dday >= tStart && dday <= tEnd) {
+          if (barStartIdx === -1) barStartIdx = di;
+          barEndIdx = di;
+        }
+      }
+      if (barStartIdx === -1 && tStart < days[0] && tEnd >= days[0]) {
+        barStartIdx = 0;
+        for (var di2 = 0; di2 < days.length; di2++) {
+          if (days[di2] <= tEnd) barEndIdx = di2;
+        }
       }
     }
 
