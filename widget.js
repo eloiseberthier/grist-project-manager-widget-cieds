@@ -3781,13 +3781,15 @@ function getExtensionBarColor(task) {
   return '#3b82f6';
 }
 
-function getGanttBarClass(task) {
+function getGanttBarColor(task) {
   var statuses = getKanbanStatuses();
   for (var si = 0; si < statuses.length; si++) {
-    if (statuses[si].key === task.Status && statuses[si].color) {
-      return 'gantt-bar-custom" style="background:' + statuses[si].color + ';color:white;';
-    }
+    if (statuses[si].key === task.Status && statuses[si].color) return statuses[si].color;
   }
+  return '';
+}
+
+function getGanttBarClass(task) {
   if (isOverdue(task)) return 'gantt-bar-overdue';
   if (task.Status === 'done') return 'gantt-bar-done';
   if (task.Status === 'progress') return 'gantt-bar-progress';
@@ -3879,6 +3881,8 @@ function renderGanttView() {
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
       var task = tasksWithDates[ti];
       var barClass = getGanttBarClass(task);
+      var barCustomColor = getGanttBarColor(task);
+      var barCustomStyle = barCustomColor ? 'background:' + barCustomColor + ';color:white;' : '';
       html += '<tr>';
       html += renderGanttTaskLabel(task);
 
@@ -3917,7 +3921,7 @@ function renderGanttView() {
         if (wi === barStartIdx) {
           var spanCols = barEndIdx - barStartIdx + 1;
           var widthPx = spanCols * 80;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
         if (wi === extStartIdx && extStartIdx >= 0) {
           var extSpan = extEndIdx - extStartIdx + 1;
@@ -4041,7 +4045,7 @@ function renderGanttView() {
         html += '<td class="gantt-cell" style="position:relative;min-width:' + colWidth + 'px;' + (isCurrent2 ? 'background:#fef2f2;' : '') + '">';
         if (ym === yBarStart) {
           var yBarW = (yBarEnd - yBarStart + 1) * colWidth;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + yBarW + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + yBarW + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
         if (ym === yExtStart && yExtStart >= 0) {
           var yExtW = (yExtEndIdx - yExtStart + 1) * colWidth;
@@ -4112,6 +4116,8 @@ function renderGanttView() {
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
       var task = tasksWithDates[ti];
       var barClass = getGanttBarClass(task);
+      var barCustomColor = getGanttBarColor(task);
+      var barCustomStyle = barCustomColor ? 'background:' + barCustomColor + ';color:white;' : '';
       html += '<tr>';
       html += renderGanttTaskLabel(task);
 
@@ -4150,7 +4156,7 @@ function renderGanttView() {
         }
         if (m === mBarStartIdx) {
           var mBarWidth = (mBarEndIdx - mBarStartIdx + 1) * 80;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + mBarWidth + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + mBarWidth + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
         if (m === mExtStart && mExtStart >= 0) {
           var mExtW = (mExtEndI - mExtStart + 1) * 80;
@@ -4241,6 +4247,8 @@ function renderGanttView() {
   for (var ti = 0; ti < tasksWithDates.length; ti++) {
     var task = tasksWithDates[ti];
     var barClass = getGanttBarClass(task);
+    var barCustomColor = getGanttBarColor(task);
+    var barCustomStyle = barCustomColor ? 'background:' + barCustomColor + ';color:white;' : '';
     html += '<tr>';
     html += renderGanttTaskLabel(task);
 
@@ -4291,7 +4299,7 @@ function renderGanttView() {
       if (di === barStartIdx) {
         var spanDays = barEndIdx - barStartIdx + 1;
         var widthPx = spanDays * 36;
-        html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
       }
       if (di === dExtStartIdx && dExtStartIdx >= 0) {
         var dExtW = (dExtEndIdx - dExtStartIdx + 1) * 36;
