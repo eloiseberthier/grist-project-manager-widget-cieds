@@ -1026,6 +1026,15 @@ function toEpoch(dateStr) {
   return Math.floor(d.getTime() / 1000);
 }
 
+function fromEpoch(ts) {
+  if (!ts) return '';
+  var d = new Date(ts * 1000);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
 function isOverdue(task) {
   if (!task.Due_Date || task.Status === 'done') return false;
   var now = Math.floor(Date.now() / 1000);
