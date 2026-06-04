@@ -46,6 +46,7 @@ var i18n = {
     ganttYear2: 'Année',
     ganttTwoYears: '2 Ans',
     extensionDate: 'Date de prolongation',
+    extensionTooltip: 'Prolongation : dépassement de l\'échéance',
     autoExtend: 'Prolongation auto',
     autoExtendHint: 'Prolonge automatiquement jusqu\'à la date du jour tant que la tâche n\'est pas terminée',
     ganttFullYear: 'Année complète',
@@ -374,6 +375,7 @@ var i18n = {
     ganttYear2: 'Year',
     ganttTwoYears: '2 Years',
     extensionDate: 'Extension date',
+    extensionTooltip: 'Extension: overdue beyond deadline',
     autoExtend: 'Auto extend',
     autoExtendHint: 'Automatically extends to today until the task is completed',
     ganttFullYear: 'Full year',
@@ -3920,7 +3922,7 @@ function renderGanttView() {
         if (wi === extStartIdx && extStartIdx >= 0) {
           var extSpan = extEndIdx - extStartIdx + 1;
           var extW = extSpan * 80;
-          html += '<div class="gantt-bar-extension" style="left:2px;width:' + extW + 'px;border-color:' + extColor + ';background:' + extColor + '20;"></div>';
+          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + extW + 'px;border-color:' + extColor + ';background:' + extColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -4043,7 +4045,7 @@ function renderGanttView() {
         }
         if (ym === yExtStart && yExtStart >= 0) {
           var yExtW = (yExtEndIdx - yExtStart + 1) * colWidth;
-          html += '<div class="gantt-bar-extension" style="left:2px;width:' + yExtW + 'px;border-color:' + yExtColor + ';background:' + yExtColor + '20;"></div>';
+          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + yExtW + 'px;border-color:' + yExtColor + ';background:' + yExtColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -4152,7 +4154,7 @@ function renderGanttView() {
         }
         if (m === mExtStart && mExtStart >= 0) {
           var mExtW = (mExtEndI - mExtStart + 1) * 80;
-          html += '<div class="gantt-bar-extension" style="left:2px;width:' + mExtW + 'px;border-color:' + mExtColor + ';background:' + mExtColor + '20;"></div>';
+          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + mExtW + 'px;border-color:' + mExtColor + ';background:' + mExtColor + '20;"></div>';
         }
         html += '</td>';
       }
@@ -4285,7 +4287,7 @@ function renderGanttView() {
       }
       if (di === dExtStartIdx && dExtStartIdx >= 0) {
         var dExtW = (dExtEndIdx - dExtStartIdx + 1) * 36;
-        html += '<div class="gantt-bar-extension" style="left:2px;width:' + dExtW + 'px;border-color:' + dExtColor + ';background:' + dExtColor + '20;"></div>';
+        html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + dExtW + 'px;border-color:' + dExtColor + ';background:' + dExtColor + '20;"></div>';
       }
       html += '</td>';
     }
