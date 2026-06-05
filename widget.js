@@ -3973,6 +3973,7 @@ function renderGanttView() {
     html += '</div></div>';
 
     document.getElementById('gantt-view').innerHTML = html;
+    initGanttDragScroll();
     return;
   }
 
@@ -4094,6 +4095,7 @@ function renderGanttView() {
     html += '</div></div>';
 
     document.getElementById('gantt-view').innerHTML = html;
+    initGanttDragScroll();
     return;
   }
 
@@ -4207,6 +4209,7 @@ function renderGanttView() {
     html += '</div></div>';
 
     document.getElementById('gantt-view').innerHTML = html;
+    initGanttDragScroll();
     return;
   }
 
@@ -4355,6 +4358,48 @@ function renderGanttView() {
   html += '</div></div>';
 
   document.getElementById('gantt-view').innerHTML = html;
+  initGanttDragScroll();
+}
+
+function initGanttDragScroll() {
+  var container = document.querySelector('#gantt-view .gantt-container');
+  if (!container) return;
+  var isDown = false;
+  var startX, scrollLeft, hasMoved;
+
+  container.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, a, select, input')) return;
+    isDown = true;
+    hasMoved = false;
+    startX = e.clientX;
+    scrollLeft = container.scrollLeft;
+    container.style.cursor = 'grabbing';
+    container.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!isDown) return;
+    isDown = false;
+    container.style.cursor = '';
+    container.style.userSelect = '';
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDown) return;
+    var dx = e.clientX - startX;
+    if (Math.abs(dx) > 3) hasMoved = true;
+    if (!hasMoved) return;
+    e.preventDefault();
+    container.scrollLeft = scrollLeft - dx;
+  });
+
+  container.addEventListener('click', function(e) {
+    if (hasMoved) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 }
 
 function setGanttYear(value) {
