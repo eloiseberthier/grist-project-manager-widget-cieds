@@ -2897,14 +2897,15 @@ function updateStats() {
   } else {
     html += '<div class="stat-card stat-total"><div><div class="stat-label">Total</div><div class="stat-value">' + total + '</div></div><div class="stat-icon">📋</div></div>';
     var statuses = getKanbanStatuses();
-    var statusIcons = { todo: '📝', progress: '🔄', done: '✅' };
     for (var i = 0; i < statuses.length; i++) {
       var s = statuses[i];
       var count = filteredTasks.filter(function(t) { return t.Status === s.key; }).length;
       var label = currentLang === 'fr' ? s.label_fr : s.label_en;
-      // Priorité à l'emoji personnalisé du statut, sinon icône par défaut
-      var icon = (s.emoji && s.emoji.trim()) ? s.emoji.trim() : (statusIcons[s.key] || '⬤');
       var color = s.color || '#94a3b8';
+      // Cohérent avec l'en-tête de colonne Kanban : emoji si configuré, sinon pastille colorée
+      var icon = (s.emoji && s.emoji.trim())
+        ? s.emoji.trim()
+        : '<span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:' + color + ';"></span>';
       html += '<div class="stat-card"><div><div class="stat-label">' + sanitize(label) + '</div><div class="stat-value" style="color:' + color + '">' + count + '</div></div><div class="stat-icon">' + icon + '</div></div>';
     }
   }
