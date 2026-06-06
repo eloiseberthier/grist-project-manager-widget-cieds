@@ -719,6 +719,7 @@ var currentFilterCategory = null;
 var currentFilterTag = null;
 var activeTimers = {}; // taskId -> startTime (for running timers)
 var kanbanGroupBy = 'status'; // 'status' | 'priority' | 'project'
+var kanbanSort = 'manual'; // 'manual' | 'alpha' | 'alpha-desc' | 'due'
 var collapsedKanbanCols = {}; // col.key -> true when collapsed
 
 var defaultKanbanStatuses = [
@@ -771,6 +772,9 @@ async function loadSettings() {
     }
     if (_settingsCache.raci_enabled) {
       raciEnabled = _settingsCache.raci_enabled.value === 'true';
+    }
+    if (_settingsCache.kanban_sort) {
+      kanbanSort = _settingsCache.kanban_sort.value || 'manual';
     }
     if (_settingsCache.automation_rules) {
       try { automationRules = JSON.parse(_settingsCache.automation_rules.value); } catch (e2) { automationRules = []; }
@@ -1044,8 +1048,20 @@ function isOverdue(task) {
 }
 
 function getTaskSubtasks(taskId) {
+  // D1 : tri par échéance croissante (sans date en dernier), Order en départage
   return subtasks.filter(function(st) { return st.Parent_Task_Id === taskId; })
-    .sort(function(a, b) { return (a.Order || 0) - (b.Order || 0); });
+    .sort(function(a, b) {
+      var da = a.Due_Date || null;
+      var db = b.Due_Date || null;
+      if (da && db) {
+        if (da !== db) return da - db;
+      } else if (da) {
+        return -1;
+      } else if (db) {
+        return 1;
+      }
+      return (a.Order || 0) - (b.Order || 0);
+    });
 }
 
 function getTaskProgress(task) {
@@ -2331,6 +2347,93 @@ function buildFilterCombo(id, placeholder, options, selectedValue, onSelect) {
   return h;
 }
 
+// B2 : multi-filtres statut/priorité du tableau (tableau vide = tous)
+var tableFilterStatuses = [];
+var tableFilterPriorities = [];
+
+function renderMultiFilter(kind) {
+  var containerId = kind === 'status' ? 'ms-status' : 'ms-priority';
+  var c = document.getElementById(containerId);
+  if (!c) return;
+  var opts, selected, placeholder;
+  if (kind === 'status') {
+    opts = getKanbanStatuses().map(function(s) { return { value: s.key, label: currentLang === 'fr' ? s.label_fr : s.label_en }; });
+    selected = tableFilterStatuses;
+    placeholder = currentLang === 'fr' ? 'Tous les statuts' : 'All statuses';
+  } else {
+    opts = [
+      { value: 'high', label: t('priorityHigh') },
+      { value: 'medium', label: t('priorityMedium') },
+      { value: 'low', label: t('priorityLow') }
+    ];
+    selected = tableFilterPriorities;
+    placeholder = currentLang === 'fr' ? 'Toutes priorités' : 'All priorities';
+  }
+  var labelText = selected.length === 0 ? placeholder
+    : opts.filter(function(o) { return selected.indexOf(o.value) !== -1; }).map(function(o) { return o.label; }).join(', ');
+  var h = '<button type="button" class="filter-combo-btn' + (selected.length ? ' active' : '') + '" onclick="toggleMsFilter(\'' + containerId + '\')" id="' + containerId + '-btn">';
+  h += '<span class="filter-combo-label">' + sanitize(labelText) + '</span><span class="filter-combo-chevron">▾</span></button>';
+  h += '<div class="filter-combo-dd" id="' + containerId + '-dd"><div class="filter-combo-list">';
+  if (selected.length) {
+    h += '<div class="filter-combo-opt" onclick="clearMsFilter(\'' + kind + '\')" style="color:#ef4444;font-weight:600;">✕ ' + (currentLang === 'fr' ? 'Effacer' : 'Clear') + '</div>';
+  }
+  opts.forEach(function(o) {
+    var on = selected.indexOf(o.value) !== -1;
+    h += '<div class="filter-combo-opt' + (on ? ' selected' : '') + '" onclick="toggleMsOption(\'' + kind + '\',\'' + sanitize(o.value).replace(/'/g, "\\'") + '\')">';
+    h += '<span style="display:inline-block;width:16px;">' + (on ? '✓' : '') + '</span>' + sanitize(o.label) + '</div>';
+  });
+  h += '</div></div>';
+  // Préserver l'état ouvert si le menu l'était avant reconstruction
+  var prevDd = document.getElementById(containerId + '-dd');
+  var wasOpen = prevDd && prevDd.classList.contains('show');
+  c.innerHTML = h;
+  if (wasOpen) {
+    var newDd = document.getElementById(containerId + '-dd');
+    var newBtn = document.getElementById(containerId + '-btn');
+    if (newDd) newDd.classList.add('show');
+    if (newBtn) newBtn.classList.add('open');
+  }
+}
+
+function toggleMsFilter(containerId) {
+  var dd = document.getElementById(containerId + '-dd');
+  var btn = document.getElementById(containerId + '-btn');
+  if (!dd) return;
+  var isOpen = dd.classList.contains('show');
+  document.querySelectorAll('.filter-combo-dd.show').forEach(function(d) { d.classList.remove('show'); });
+  document.querySelectorAll('.filter-combo-btn.open').forEach(function(b) { b.classList.remove('open'); });
+  if (!isOpen) {
+    dd.classList.add('show');
+    if (btn) btn.classList.add('open');
+    setTimeout(function() {
+      document.addEventListener('mousedown', function hideMs(e) {
+        var box = document.getElementById(containerId);
+        // Re-query : les éléments sont recréés à chaque renderMultiFilter
+        if (box && !box.contains(e.target)) {
+          var dd2 = document.getElementById(containerId + '-dd');
+          var btn2 = document.getElementById(containerId + '-btn');
+          if (dd2) dd2.classList.remove('show');
+          if (btn2) btn2.classList.remove('open');
+          document.removeEventListener('mousedown', hideMs);
+        }
+      });
+    }, 0);
+  }
+}
+
+function toggleMsOption(kind, value) {
+  var arr = kind === 'status' ? tableFilterStatuses : tableFilterPriorities;
+  var i = arr.indexOf(value);
+  if (i === -1) arr.push(value); else arr.splice(i, 1);
+  renderTableView(); // reconstruit le filtre (état ouvert préservé) + le tableau
+}
+
+function clearMsFilter(kind) {
+  if (kind === 'status') tableFilterStatuses = []; else tableFilterPriorities = [];
+  renderMultiFilter(kind);
+  renderTableView();
+}
+
 function toggleFilterCombo(id) {
   var dd = document.getElementById('fc-dd-' + id);
   var btn = document.getElementById('fc-btn-' + id);
@@ -2590,7 +2693,8 @@ function updateStats() {
       var s = statuses[i];
       var count = filteredTasks.filter(function(t) { return t.Status === s.key; }).length;
       var label = currentLang === 'fr' ? s.label_fr : s.label_en;
-      var icon = statusIcons[s.key] || '⬤';
+      // Priorité à l'emoji personnalisé du statut, sinon icône par défaut
+      var icon = (s.emoji && s.emoji.trim()) ? s.emoji.trim() : (statusIcons[s.key] || '⬤');
       var color = s.color || '#94a3b8';
       html += '<div class="stat-card"><div><div class="stat-label">' + sanitize(label) + '</div><div class="stat-value" style="color:' + color + '">' + count + '</div></div><div class="stat-icon">' + icon + '</div></div>';
     }
@@ -3115,6 +3219,31 @@ function setKanbanGroupBy(value) {
   renderKanbanView();
 }
 
+function setKanbanSort(value) {
+  kanbanSort = value;
+  saveSetting('kanban_sort', value);
+  renderKanbanView();
+}
+
+// A1 : tri des fiches d'une colonne Kanban
+function sortKanbanTasks(list) {
+  var arr = list.slice();
+  if (kanbanSort === 'alpha') {
+    arr.sort(function(a, b) { return (a.Title || '').localeCompare(b.Title || ''); });
+  } else if (kanbanSort === 'alpha-desc') {
+    arr.sort(function(a, b) { return (b.Title || '').localeCompare(a.Title || ''); });
+  } else if (kanbanSort === 'due') {
+    arr.sort(function(a, b) {
+      var da = a.Due_Date || null, db = b.Due_Date || null;
+      if (da && db) return da - db;
+      if (da) return -1;
+      if (db) return 1;
+      return 0;
+    });
+  }
+  return arr; // 'manual' : ordre d'origine inchangé
+}
+
 function toggleKanbanCol(key) {
   collapsedKanbanCols[key] = !collapsedKanbanCols[key];
   renderKanbanView();
@@ -3124,6 +3253,8 @@ function renderKanbanView() {
   var board = document.getElementById('kanban-board');
   var sel = document.getElementById('kanban-groupby');
   if (sel && sel.value !== kanbanGroupBy) sel.value = kanbanGroupBy;
+  var sortSel = document.getElementById('kanban-sort');
+  if (sortSel && sortSel.value !== kanbanSort) sortSel.value = kanbanSort;
 
   var columns = [];
   var filteredTasks = getFilteredTasks();
@@ -3169,6 +3300,7 @@ function renderKanbanView() {
       if (col.field === 'Priority') return task.Priority === col.key;
       return false;
     });
+    colTasks = sortKanbanTasks(colTasks);
     var dotStyle = col.color ? 'display:inline-block;width:10px;height:10px;border-radius:50%;background:' + col.color + ';margin-right:6px;' : 'display:none;';
     var isCollapsed = !!collapsedKanbanCols[col.key];
 
@@ -3486,23 +3618,26 @@ function sortTable(field) {
   renderTableView();
 }
 function renderTableView() {
-  var filterStatusEl = document.getElementById('filter-status');
-  if (filterStatusEl && filterStatusEl.options.length <= 1) {
-    var sts = getKanbanStatuses();
-    for (var si = 0; si < sts.length; si++) {
-      var opt = document.createElement('option');
-      opt.value = sts[si].key;
-      opt.textContent = currentLang === 'fr' ? sts[si].label_fr : sts[si].label_en;
-      filterStatusEl.appendChild(opt);
-    }
+  // B3 : mémoriser l'état avant reconstruction (sous-tâches dépliées + scroll)
+  var _prevView = document.getElementById('table-view');
+  var _expandedParents = [];
+  if (_prevView) {
+    _prevView.querySelectorAll('.toggle-btn.expanded').forEach(function(b) {
+      _expandedParents.push(b.id.replace('toggle-', ''));
+    });
   }
+  var _scrollEl = document.scrollingElement || document.documentElement;
+  var _scrollTop = _scrollEl ? _scrollEl.scrollTop : (window.scrollY || 0);
+
+  // B2 : (re)construire les multi-filtres statut/priorité
+  renderMultiFilter('status');
+  renderMultiFilter('priority');
+
   var search = (document.getElementById('table-search').value || '').toLowerCase();
-  var filterStatus = document.getElementById('filter-status').value;
-  var filterPriority = document.getElementById('filter-priority').value;
 
   var filtered = getFilteredTasks().filter(function(task) {
-    if (filterStatus && task.Status !== filterStatus) return false;
-    if (filterPriority && task.Priority !== filterPriority) return false;
+    if (tableFilterStatuses.length && tableFilterStatuses.indexOf(task.Status) === -1) return false;
+    if (tableFilterPriorities.length && tableFilterPriorities.indexOf(task.Priority) === -1) return false;
     if (search) {
       var text = (task.Title + ' ' + task.Description + ' ' + task.Assignee).toLowerCase();
       if (text.indexOf(search) === -1) return false;
@@ -3597,6 +3732,15 @@ function renderTableView() {
 
   html += '</tbody></table>';
   document.getElementById('table-view').innerHTML = html;
+
+  // B3 : restaurer le dépliage des sous-tâches puis la position de scroll
+  _expandedParents.forEach(function(pid) {
+    var rows = document.querySelectorAll('.subtask-row[data-parent="' + pid + '"]');
+    var btn = document.getElementById('toggle-' + pid);
+    for (var i = 0; i < rows.length; i++) rows[i].style.display = 'table-row';
+    if (btn) { btn.textContent = '▼'; btn.classList.add('expanded'); }
+  });
+  if (_scrollEl && _scrollTop) _scrollEl.scrollTop = _scrollTop;
 }
 
 function toggleSubtasks(taskId) {
