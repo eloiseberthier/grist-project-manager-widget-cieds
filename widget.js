@@ -1381,7 +1381,8 @@ async function uploadTaskAttachments(taskId, fileList) {
   var statusEl = document.getElementById('attach-status-' + taskId);
   try {
     var acc = await getGristAccess();
-    var uploadUrl = acc.baseUrl + '/attachments?auth=' + encodeURIComponent(acc.token);
+    var uploadUrl = acc.baseUrl + '/attachments?auth=' + acc.token;
+    console.log('[GristPM] baseUrl=' + acc.baseUrl + ' uploadUrl=' + uploadUrl);
     var addedCount = 0;
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
