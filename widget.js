@@ -6101,6 +6101,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '<label class="attach-upload-btn">📎 ' + (currentLang === 'fr' ? 'Ajouter un fichier' : 'Add file') + '<input type="file" multiple style="display:none;" onchange="uploadTaskAttachments(' + task.id + ', Array.from(this.files)); this.value=\'\';"></label>';
   html += '<span class="attach-status" id="attach-status-' + task.id + '"></span>';
   html += '</div>';
+  html += '<div class="attach-hint">' + (currentLang === 'fr' ? 'Tous formats · max 5 Mo par fichier (images compressées automatiquement)' : 'All formats · max 5MB per file (images auto-compressed)') + '</div>';
   html += '</div>';
 
   // === COMMENTS SECTION ===
