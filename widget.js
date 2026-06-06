@@ -152,6 +152,7 @@ var i18n = {
     editProject: 'Modifier le projet',
     deleteProject: 'Supprimer le projet',
     noProject: 'Sans projet',
+    projectSearchPlaceholder: 'Rechercher un projet...',
     tabSettings: 'Paramètres',
     settingsSubtitle: 'Configurez vos projets, catégories et autres options',
     projectsSubtitle: 'Gérez vos projets',
@@ -477,6 +478,7 @@ var i18n = {
     editProject: 'Edit project',
     deleteProject: 'Delete project',
     noProject: 'No project',
+    projectSearchPlaceholder: 'Search a project...',
     tabSettings: 'Settings',
     settingsSubtitle: 'Configure your projects, categories and other options',
     projectsSubtitle: 'Manage your projects',
@@ -720,6 +722,7 @@ var currentFilterTag = null;
 var activeTimers = {}; // taskId -> startTime (for running timers)
 var kanbanGroupBy = 'status'; // 'status' | 'priority' | 'project'
 var kanbanSort = 'manual'; // 'manual' | 'alpha' | 'alpha-desc' | 'due'
+var expandedKanbanCards = {}; // taskId -> true quand la tuile est dépliée (A2)
 var collapsedKanbanCols = {}; // col.key -> true when collapsed
 
 var defaultKanbanStatuses = [
@@ -3249,6 +3252,29 @@ function toggleKanbanCol(key) {
   renderKanbanView();
 }
 
+// A2 : déplier/replier le détail d'une tuile Kanban (clic simple sur le bouton)
+function toggleCardExpand(taskId, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  if (expandedKanbanCards[taskId]) delete expandedKanbanCards[taskId];
+  else expandedKanbanCards[taskId] = true;
+  renderKanbanView();
+}
+
+// Cocher/décocher une sous-tâche depuis le panneau déplié d'une tuile
+async function toggleSubtaskFromCard(subtaskId, completed) {
+  try {
+    await grist.docApi.applyUserActions([
+      ['UpdateRecord', SUBTASKS_TABLE, subtaskId, { Completed: completed }]
+    ]);
+    for (var i = 0; i < subtasks.length; i++) {
+      if (subtasks[i].id === subtaskId) { subtasks[i].Completed = completed; break; }
+    }
+    renderKanbanView();
+  } catch (e) {
+    console.error('toggleSubtaskFromCard:', e);
+  }
+}
+
 function renderKanbanView() {
   var board = document.getElementById('kanban-board');
   var sel = document.getElementById('kanban-groupby');
@@ -3374,6 +3400,8 @@ function renderTaskCard(task) {
   var _statusDef = getKanbanStatuses().find(function(st) { return st.key === task.Status; });
   var _statusColor = _statusDef ? _statusDef.color : '#94a3b8';
   html += '<span class="task-card-status-badge" style="background:' + _statusColor + '20;color:' + _statusColor + ';">' + statusLabel(task.Status) + '</span>';
+  var _isExpanded = !!expandedKanbanCards[task.id];
+  html += '<button class="btn-icon task-card-expand-btn" onclick="event.stopPropagation();toggleCardExpand(' + task.id + ', event)" title="' + (currentLang === 'fr' ? 'Détails' : 'Details') + '">' + (_isExpanded ? '🔼' : '🔽') + '</button>';
   if (isOwner) html += '<button class="btn-icon" onclick="deleteTask(' + task.id + ')" title="' + t('delete') + '">🗑️</button>';
   html += '</div></div>';
 
@@ -3460,6 +3488,40 @@ function renderTaskCard(task) {
   }
   if (task.Status === 'archived') {
     html += '<div class="task-card-row" style="justify-content:flex-end;"><button class="btn btn-sm" style="font-size:10px;padding:2px 8px;background:#dbeafe;border:1px solid #93c5fd;border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();restoreTask(' + task.id + ')" title="' + (currentLang === 'fr' ? 'Restaurer' : 'Restore') + '">♻️ ' + (currentLang === 'fr' ? 'Restaurer' : 'Restore') + '</button></div>';
+  }
+
+  // A2 : panneau de détail déplié (description complète, sous-tâches, commentaires)
+  if (_isExpanded) {
+    var _fr = currentLang === 'fr';
+    html += '<div class="task-card-detail" onclick="event.stopPropagation();">';
+    if (task.Description) {
+      html += '<div class="tcd-section"><div class="tcd-label">' + (_fr ? 'Description' : 'Description') + '</div>';
+      html += '<div class="tcd-desc">' + sanitize(task.Description) + '</div></div>';
+    }
+    if (taskSubtasks.length > 0) {
+      html += '<div class="tcd-section"><div class="tcd-label">' + (_fr ? 'Sous-tâches' : 'Subtasks') + ' (' + completedCount + '/' + taskSubtasks.length + ')</div>';
+      taskSubtasks.forEach(function(st) {
+        html += '<label class="tcd-subtask"><input type="checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtaskFromCard(' + st.id + ', this.checked)">';
+        html += '<span' + (st.Completed ? ' style="text-decoration:line-through;color:#94a3b8;"' : '') + '>' + sanitize(st.Title) + '</span>';
+        if (st.Due_Date) html += '<span class="tcd-st-date">📅 ' + formatDate(st.Due_Date) + '</span>';
+        html += '</label>';
+      });
+      html += '</div>';
+    }
+    if (taskComments.length > 0) {
+      html += '<div class="tcd-section"><div class="tcd-label">' + (_fr ? 'Commentaires' : 'Comments') + ' (' + taskComments.length + ')</div>';
+      taskComments.slice(-5).forEach(function(cmt) {
+        html += '<div class="tcd-comment"><span class="tcd-c-author">👤 ' + sanitize(cmt.Author || '?') + '</span> ';
+        html += '<span class="tcd-c-time">' + formatTimeAgo(cmt.Created_At) + '</span>';
+        html += '<div class="tcd-c-content">' + sanitize(cmt.Content) + '</div></div>';
+      });
+      html += '</div>';
+    }
+    if (!task.Description && taskSubtasks.length === 0 && taskComments.length === 0) {
+      html += '<div style="color:#94a3b8;font-size:12px;padding:4px 0;">' + (_fr ? 'Aucun détail pour le moment' : 'No details yet') + '</div>';
+    }
+    html += '<button class="btn btn-sm" style="margin-top:8px;font-size:11px;padding:3px 10px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;" onclick="event.stopPropagation();openEditTaskModal(' + task.id + ')">✏️ ' + (_fr ? 'Éditer la tâche' : 'Edit task') + '</button>';
+    html += '</div>';
   }
 
   html += '</div></div>';
@@ -3714,14 +3776,31 @@ function renderTableView() {
     html += '</td>';
     html += '</tr>';
 
-    // Subtasks rows (hidden by default)
+    // Subtasks rows (hidden by default) — B1 : colonnes enrichies, sans pastille près du titre
+    var _nowSec = Math.floor(Date.now() / 1000);
     for (var si = 0; si < taskSubtasks.length; si++) {
       var st = taskSubtasks[si];
       html += '<tr class="subtask-row clickable-row" data-parent="' + task.id + '" style="display:none;cursor:pointer;" onclick="openEditTaskModal(' + task.id + ', true); setTimeout(function(){startEditSubtask(' + st.id + ')},100);">';
       var stStatus = st.Status || (st.Completed ? 'done' : 'todo');
-      var stStatusLabel = stStatus === 'done' ? t('statusDone') : (stStatus === 'progress' ? t('statusProgress') : t('statusTodo'));
-      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span><span class="st-status-badge ' + stStatus + '" style="margin-left:8px;">' + stStatusLabel + '</span></div></td>';
-      html += '<td colspan="7"></td>';
+      var stDotClass = st.Priority === 'high' ? 'dot-high' : (st.Priority === 'medium' ? 'dot-medium' : 'dot-low');
+      var stAssignee = st.Assignee ? st.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
+      var stOverdue = st.Due_Date && !st.Completed && st.Due_Date < _nowSec;
+      // Colonne Tâche (titre)
+      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
+      // Projet (vide : hérité du parent)
+      html += '<td></td>';
+      // Statut
+      html += '<td><span class="status-badge status-' + stStatus + '">● ' + statusLabel(stStatus) + '</span></td>';
+      // Priorité
+      html += '<td><span class="priority-dot ' + stDotClass + '"></span> ' + priorityLabel(st.Priority) + '</td>';
+      // Assigné à
+      html += '<td>' + (stAssignee ? '<span class="assignee-chip">👤 ' + sanitize(stAssignee) + '</span>' : '') + '</td>';
+      // Date de début
+      html += '<td>' + (st.Start_Date ? formatDate(st.Start_Date) : '') + '</td>';
+      // Échéance
+      html += '<td style="' + (stOverdue ? 'color:#dc2626;font-weight:700;' : '') + '">' + (st.Due_Date ? formatDate(st.Due_Date) + (stOverdue ? ' ⚠️' : '') : '') + '</td>';
+      // Actions
+      html += '<td></td>';
       html += '</tr>';
     }
   }
@@ -7727,6 +7806,8 @@ function openProjectModal() {
   document.getElementById('project-color').value = '#6366f1';
   document.getElementById('project-status').value = 'active';
   document.getElementById('project-form-title').textContent = t('addProject');
+  var psearch = document.getElementById('project-search');
+  if (psearch) psearch.value = '';
   renderProjectList();
 }
 
@@ -7734,28 +7815,60 @@ function closeProjectModal() {
   document.getElementById('project-modal').style.display = 'none';
 }
 
+var PROJECT_LIST_LIMIT = 5;
 function renderProjectList() {
+  var searchEl = document.getElementById('project-search');
+  var q = (searchEl && searchEl.value ? searchEl.value : '').trim().toLowerCase();
+
   var html = '';
   if (projects.length === 0) {
     html = '<div style="text-align:center;color:#94a3b8;padding:20px;">' + t('noProject') + '</div>';
-  } else {
-    html = '<div class="project-items">';
-    var filteredTasks = getFilteredTasks();
-    projects.forEach(function(proj) {
-      var taskCount = filteredTasks.filter(function(t) { return t.Project_Id === proj.id; }).length;
-      html += '<div class="project-item" style="border-left: 4px solid ' + (proj.Color || '#6366f1') + ';">';
-      html += '<div class="project-item-info">';
-      html += '<strong>' + sanitize(proj.Name) + '</strong>';
-      html += '<span class="project-item-meta">' + taskCount + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + '</span>';
-      html += '</div>';
-      html += '<div class="project-item-actions">';
-      html += '<button class="btn-icon" onclick="editProject(' + proj.id + ')" title="' + t('editProject') + '">✏️</button>';
-      html += '<button class="btn-icon" onclick="deleteProject(' + proj.id + ')" title="' + t('deleteProject') + '">🗑️</button>';
-      html += '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
+    document.getElementById('project-list').innerHTML = html;
+    return;
   }
+
+  // Tri du plus récent au plus ancien (id décroissant)
+  var sorted = projects.slice().sort(function(a, b) { return (b.id || 0) - (a.id || 0); });
+
+  var matching = q
+    ? sorted.filter(function(p) { return (p.Name || '').toLowerCase().indexOf(q) !== -1; })
+    : sorted;
+
+  // Sans recherche : limiter aux N plus récents
+  var shown = q ? matching : matching.slice(0, PROJECT_LIST_LIMIT);
+
+  if (matching.length === 0) {
+    html = '<div style="text-align:center;color:#94a3b8;padding:16px;">' + (currentLang === 'fr' ? 'Aucun projet trouvé' : 'No project found') + '</div>';
+    document.getElementById('project-list').innerHTML = html;
+    return;
+  }
+
+  var filteredTasks = getFilteredTasks();
+  html = '<div class="project-items">';
+  shown.forEach(function(proj) {
+    var taskCount = filteredTasks.filter(function(t) { return t.Project_Id === proj.id; }).length;
+    html += '<div class="project-item" style="border-left: 4px solid ' + (proj.Color || '#6366f1') + ';">';
+    html += '<div class="project-item-info">';
+    html += '<strong>' + sanitize(proj.Name) + '</strong>';
+    html += '<span class="project-item-meta">' + taskCount + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + '</span>';
+    html += '</div>';
+    html += '<div class="project-item-actions">';
+    html += '<button class="btn-icon" onclick="editProject(' + proj.id + ')" title="' + t('editProject') + '">✏️</button>';
+    html += '<button class="btn-icon" onclick="deleteProject(' + proj.id + ')" title="' + t('deleteProject') + '">🗑️</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // Indicateur si des projets sont masqués (hors recherche)
+  if (!q && matching.length > PROJECT_LIST_LIMIT) {
+    html += '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:6px;">'
+      + (currentLang === 'fr'
+        ? '+ ' + (matching.length - PROJECT_LIST_LIMIT) + ' autre(s) — utilisez la recherche'
+        : '+ ' + (matching.length - PROJECT_LIST_LIMIT) + ' more — use search')
+      + '</div>';
+  }
+
   document.getElementById('project-list').innerHTML = html;
 }
 
