@@ -6088,7 +6088,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '</div>';
   html += '<div class="attachments-list" id="attachments-list-' + task.id + '"></div>';
   html += '<div class="attach-add-row">';
-  html += '<label class="attach-upload-btn">📎 ' + (currentLang === 'fr' ? 'Ajouter un fichier' : 'Add file') + '<input type="file" multiple style="display:none;" onchange="uploadTaskAttachments(' + task.id + ', this.files); this.value=\'\';"></label>';
+  html += '<label class="attach-upload-btn">📎 ' + (currentLang === 'fr' ? 'Ajouter un fichier' : 'Add file') + '<input type="file" multiple style="display:none;" onchange="uploadTaskAttachments(' + task.id + ', Array.from(this.files)); this.value=\'\';"></label>';
   html += '<span class="attach-status" id="attach-status-' + task.id + '"></span>';
   html += '</div>';
   html += '</div>';
