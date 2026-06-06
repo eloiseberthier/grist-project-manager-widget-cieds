@@ -1382,16 +1382,23 @@ async function uploadTaskAttachments(taskId, fileList) {
   try {
     var acc = await getGristAccess();
     var uploadUrl = acc.baseUrl + '/attachments?auth=' + encodeURIComponent(acc.token);
+    var addedCount = 0;
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
       if (statusEl) statusEl.textContent = (currentLang === 'fr' ? 'Envoi de ' : 'Uploading ') + file.name + '...';
       var fd = new FormData();
       fd.append('upload', file);
       var resp = await fetch(uploadUrl, { method: 'POST', body: fd });
-      if (!resp.ok) throw new Error('Upload HTTP ' + resp.status);
-      var ids = await resp.json(); // tableau d'IDs d'attachements
-      var attId = Array.isArray(ids) ? ids[0] : ids;
-      await grist.docApi.applyUserActions([
+      var bodyText = await resp.text();
+      console.log('[GristPM] upload status=' + resp.status + ' body=' + bodyText);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + ' — ' + bodyText.slice(0, 200));
+      // Réponse attendue : tableau d'IDs, ex. [123]. On gère aussi {id:..} par sécurité.
+      var ids;
+      try { ids = JSON.parse(bodyText); } catch (pe) { throw new Error('Réponse upload non JSON : ' + bodyText.slice(0, 120)); }
+      var attId = Array.isArray(ids) ? ids[0] : (typeof ids === 'number' ? ids : (ids && ids.id));
+      if (!attId && attId !== 0) throw new Error('Aucun ID d\'attachement renvoyé (' + bodyText.slice(0, 120) + ')');
+
+      var result = await grist.docApi.applyUserActions([
         ['AddRecord', ATTACHMENTS_TABLE, null, {
           Task_Id: taskId,
           File_Name: file.name,
@@ -1401,13 +1408,16 @@ async function uploadTaskAttachments(taskId, fileList) {
           Created_At: Math.floor(Date.now() / 1000)
         }]
       ]);
+      console.log('[GristPM] AddRecord attachment result:', result);
+      addedCount++;
     }
+    if (statusEl) statusEl.textContent = '';
     await loadAllData();
     renderAttachmentsSection(taskId);
     if (typeof refreshAllViews === 'function') refreshAllViews();
-    showToast(currentLang === 'fr' ? 'Pièce(s) jointe(s) ajoutée(s)' : 'Attachment(s) added', 'success');
+    showToast((currentLang === 'fr' ? 'Pièce(s) jointe(s) ajoutée(s) : ' : 'Attachment(s) added: ') + addedCount, 'success');
   } catch (e) {
-    console.error('uploadTaskAttachments:', e);
+    console.error('[GristPM] uploadTaskAttachments error:', e);
     if (statusEl) statusEl.textContent = '';
     showToast((currentLang === 'fr' ? 'Échec de l\'envoi : ' : 'Upload failed: ') + e.message, 'error');
   }
