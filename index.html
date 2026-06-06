@@ -2742,6 +2742,63 @@
       border-radius: 10px;
       border: 1px solid #bae6fd;
     }
+    /* D2 : pièces jointes */
+    .attachments-section {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fefce8;
+      border-radius: 10px;
+      border: 1px solid #fde68a;
+    }
+    .attachments-list { margin: 8px 0; }
+    .attach-empty { color: #94a3b8; font-size: 12px; padding: 4px 0; }
+    .attach-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: #fff;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+    .attach-icon { font-size: 15px; flex-shrink: 0; }
+    .attach-name {
+      flex: 1;
+      font-size: 13px;
+      color: #1e293b;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-decoration: underline;
+      text-decoration-color: #cbd5e1;
+    }
+    .attach-name:hover { color: #2563eb; }
+    .attach-size { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+    .attach-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .attach-btn:hover { background: #f1f5f9; }
+    .attach-add-row { display: flex; align-items: center; gap: 10px; }
+    .attach-upload-btn {
+      display: inline-block;
+      padding: 6px 14px;
+      background: #f59e0b;
+      color: #fff;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .attach-upload-btn:hover { background: #d97706; }
+    .attach-status { font-size: 11px; color: #92400e; }
     .comments-header {
       display: flex;
       align-items: center;
@@ -4335,6 +4392,17 @@
   <!-- MODAL CONTAINER -->
   <div id="modal-container"></div>
 
+  <!-- ATTACHMENT VIEWER (D2) -->
+  <div id="attachment-viewer" class="modal-overlay" style="display:none;z-index:10000;" onclick="if(event.target===this)closeAttachmentViewer()">
+    <div class="modal-content" style="max-width:90vw;width:auto;">
+      <div class="modal-header">
+        <h2 id="attachment-viewer-title" style="font-size:15px;"></h2>
+        <button class="modal-close" onclick="closeAttachmentViewer()">×</button>
+      </div>
+      <div class="modal-body" id="attachment-viewer-body" style="padding:16px;"></div>
+    </div>
+  </div>
+
   <!-- CONFIRM MODAL -->
   <div id="confirm-modal" class="modal-overlay" style="display:none;">
     <div class="modal-content confirm-modal-content">
@@ -4488,7 +4556,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=100"></script>
+  <script src="widget.js?v=101"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

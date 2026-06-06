@@ -828,6 +828,8 @@ var CONFIG_TABLE = 'PM_Config';
 var SETTINGS_TABLE = 'PM_Settings';
 var NOTIFICATIONS_TABLE = 'PM_Notifications';
 var ACTIVITY_LOG_TABLE = 'PM_ActivityLog';
+var ATTACHMENTS_TABLE = 'PM_Attachments';
+var attachments = [];
 var activityLog = [];
 
 // Default table names — used to detect remapping: if a table var differs from
@@ -1335,6 +1337,173 @@ function getTaskTimeEntries(taskId) {
     .sort(function(a, b) { return (b.Start_Time || 0) - (a.Start_Time || 0); });
 }
 
+// === D2 : PIÈCES JOINTES (Attachments natifs Grist) ===
+function getTaskAttachments(taskId) {
+  return attachments.filter(function(a) { return a.Task_Id === taskId; })
+    .sort(function(a, b) { return (a.Created_At || 0) - (b.Created_At || 0); });
+}
+
+// Récupère un token d'accès Grist (mis en cache jusqu'à expiration)
+var _gristAccessToken = null;
+var _gristAccessTokenExp = 0;
+async function getGristAccess() {
+  var now = Date.now();
+  if (_gristAccessToken && now < _gristAccessTokenExp - 5000) return _gristAccessToken;
+  var info = await grist.docApi.getAccessToken({ readOnly: false });
+  _gristAccessToken = info;
+  _gristAccessTokenExp = now + (info.ttlMsecs || 60000);
+  return info;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' o';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' Ko';
+  return (bytes / 1024 / 1024).toFixed(1) + ' Mo';
+}
+
+function attachmentIsImage(type, name) {
+  return /^image\//.test(type || '') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name || '');
+}
+function attachmentIsPdf(type, name) {
+  return (type || '') === 'application/pdf' || /\.pdf$/i.test(name || '');
+}
+
+// URL de téléchargement/visualisation d'un attachement (token frais)
+async function getAttachmentUrl(attachmentId) {
+  var acc = await getGristAccess();
+  return acc.baseUrl + '/attachments/' + attachmentId + '/download?auth=' + encodeURIComponent(acc.token);
+}
+
+// Upload d'un ou plusieurs fichiers pour une tâche
+async function uploadTaskAttachments(taskId, fileList) {
+  if (!fileList || !fileList.length) return;
+  var statusEl = document.getElementById('attach-status-' + taskId);
+  try {
+    var acc = await getGristAccess();
+    var uploadUrl = acc.baseUrl + '/attachments?auth=' + encodeURIComponent(acc.token);
+    for (var i = 0; i < fileList.length; i++) {
+      var file = fileList[i];
+      if (statusEl) statusEl.textContent = (currentLang === 'fr' ? 'Envoi de ' : 'Uploading ') + file.name + '...';
+      var fd = new FormData();
+      fd.append('upload', file);
+      var resp = await fetch(uploadUrl, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Upload HTTP ' + resp.status);
+      var ids = await resp.json(); // tableau d'IDs d'attachements
+      var attId = Array.isArray(ids) ? ids[0] : ids;
+      await grist.docApi.applyUserActions([
+        ['AddRecord', ATTACHMENTS_TABLE, null, {
+          Task_Id: taskId,
+          File_Name: file.name,
+          File_Type: file.type || '',
+          File_Size: file.size || 0,
+          File: ['L', attId],
+          Created_At: Math.floor(Date.now() / 1000)
+        }]
+      ]);
+    }
+    await loadAllData();
+    renderAttachmentsSection(taskId);
+    if (typeof refreshAllViews === 'function') refreshAllViews();
+    showToast(currentLang === 'fr' ? 'Pièce(s) jointe(s) ajoutée(s)' : 'Attachment(s) added', 'success');
+  } catch (e) {
+    console.error('uploadTaskAttachments:', e);
+    if (statusEl) statusEl.textContent = '';
+    showToast((currentLang === 'fr' ? 'Échec de l\'envoi : ' : 'Upload failed: ') + e.message, 'error');
+  }
+}
+
+function _findAtt(recordId) {
+  return attachments.find(function(a) { return a.id === recordId; });
+}
+
+async function downloadAttachment(recordId) {
+  var att = _findAtt(recordId);
+  if (!att) return;
+  try {
+    var url = await getAttachmentUrl(att.Attachment_Id);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = att.File_Name || '';
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (e) {
+    showToast((currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + e.message, 'error');
+  }
+}
+
+async function deleteAttachment(recordId, taskId) {
+  if (!confirm(currentLang === 'fr' ? 'Supprimer cette pièce jointe ?' : 'Delete this attachment?')) return;
+  try {
+    await grist.docApi.applyUserActions([['RemoveRecord', ATTACHMENTS_TABLE, recordId]]);
+    await loadAllData();
+    renderAttachmentsSection(taskId);
+    if (typeof refreshAllViews === 'function') refreshAllViews();
+  } catch (e) {
+    showToast((currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + e.message, 'error');
+  }
+}
+
+// Visionneur : ouvre une image/PDF en grand, sinon télécharge
+async function viewAttachment(recordId) {
+  var att = _findAtt(recordId);
+  if (!att) return;
+  try {
+    var url = await getAttachmentUrl(att.Attachment_Id);
+    var isImg = attachmentIsImage(att.File_Type, att.File_Name);
+    var isPdf = attachmentIsPdf(att.File_Type, att.File_Name);
+    if (isImg || isPdf) {
+      var overlay = document.getElementById('attachment-viewer');
+      var body = document.getElementById('attachment-viewer-body');
+      var title = document.getElementById('attachment-viewer-title');
+      if (title) title.textContent = att.File_Name || '';
+      if (body) {
+        body.innerHTML = isImg
+          ? '<img src="' + url + '" style="max-width:100%;max-height:78vh;display:block;margin:0 auto;border-radius:8px;">'
+          : '<iframe src="' + url + '" style="width:100%;height:78vh;border:none;border-radius:8px;"></iframe>';
+      }
+      if (overlay) overlay.style.display = 'flex';
+    } else {
+      window.open(url, '_blank');
+    }
+  } catch (e) {
+    showToast((currentLang === 'fr' ? 'Erreur : ' : 'Error: ') + e.message, 'error');
+  }
+}
+
+function closeAttachmentViewer() {
+  var overlay = document.getElementById('attachment-viewer');
+  var body = document.getElementById('attachment-viewer-body');
+  if (body) body.innerHTML = '';
+  if (overlay) overlay.style.display = 'none';
+}
+
+// (Re)construit la section pièces jointes du formulaire de tâche
+function renderAttachmentsSection(taskId) {
+  var container = document.getElementById('attachments-list-' + taskId);
+  if (!container) return;
+  var list = getTaskAttachments(taskId);
+  var html = '';
+  if (list.length === 0) {
+    html = '<div class="attach-empty">' + (currentLang === 'fr' ? 'Aucune pièce jointe' : 'No attachments') + '</div>';
+  } else {
+    list.forEach(function(att) {
+      var isImg = attachmentIsImage(att.File_Type, att.File_Name);
+      var icon = isImg ? '🖼️' : (attachmentIsPdf(att.File_Type, att.File_Name) ? '📄' : '📎');
+      html += '<div class="attach-item">';
+      html += '<span class="attach-icon">' + icon + '</span>';
+      html += '<span class="attach-name" onclick="viewAttachment(' + att.id + ')" title="' + (currentLang === 'fr' ? 'Voir' : 'View') + '">' + sanitize(att.File_Name) + '</span>';
+      html += '<span class="attach-size">' + formatFileSize(att.File_Size) + '</span>';
+      html += '<button class="attach-btn" onclick="downloadAttachment(' + att.id + ')" title="' + (currentLang === 'fr' ? 'Télécharger' : 'Download') + '">⬇️</button>';
+      if (isOwner) html += '<button class="attach-btn" onclick="deleteAttachment(' + att.id + ', ' + taskId + ')" title="' + t('delete') + '">🗑️</button>';
+      html += '</div>';
+    });
+  }
+  container.innerHTML = html;
+}
+
 function getTaskTotalTime(taskId) {
   var entries = getTaskTimeEntries(taskId);
   var total = 0;
@@ -1613,6 +1782,20 @@ async function ensureTables() {
         ['AddTable', TAGS_TABLE, [
           { id: 'Name', type: 'Text' },
           { id: 'Color', type: 'Text' }
+        ]]
+      ]);
+    }
+
+    // D2 : table des pièces jointes (Attachments natifs Grist)
+    if (existingTables.indexOf(ATTACHMENTS_TABLE) === -1) {
+      await grist.docApi.applyUserActions([
+        ['AddTable', ATTACHMENTS_TABLE, [
+          { id: 'Task_Id', type: 'Int' },
+          { id: 'File_Name', type: 'Text' },
+          { id: 'File_Type', type: 'Text' },
+          { id: 'File_Size', type: 'Int' },
+          { id: 'File', type: 'Attachments' },
+          { id: 'Created_At', type: 'DateTime' }
         ]]
       ]);
     }
@@ -2019,6 +2202,29 @@ async function loadAllData() {
     }
   } catch (e) {
     comments = [];
+  }
+
+  try {
+    var attData = await grist.docApi.fetchTable(ATTACHMENTS_TABLE);
+    attachments = [];
+    if (attData && attData.id) {
+      for (var i = 0; i < attData.id.length; i++) {
+        // File est une colonne Attachments : valeur ['L', id1, id2...]
+        var fileRef = attData.File ? attData.File[i] : null;
+        var attId = (Array.isArray(fileRef) && fileRef.length > 1) ? fileRef[1] : null;
+        attachments.push({
+          id: attData.id[i],
+          Task_Id: attData.Task_Id ? attData.Task_Id[i] : null,
+          File_Name: attData.File_Name ? attData.File_Name[i] : '',
+          File_Type: attData.File_Type ? attData.File_Type[i] : '',
+          File_Size: attData.File_Size ? attData.File_Size[i] : 0,
+          Attachment_Id: attId,
+          Created_At: attData.Created_At ? attData.Created_At[i] : null
+        });
+      }
+    }
+  } catch (e) {
+    attachments = [];
   }
 
   try {
@@ -5862,6 +6068,20 @@ function openEditTaskModal(taskId, preserveAssignees) {
     html += '</div>';
   }
 
+  // === ATTACHMENTS SECTION (D2) ===
+  html += '<div class="attachments-section">';
+  html += '<div class="comments-header">';
+  html += '<span class="detail-field-icon">📎</span>';
+  html += '<span class="detail-field-label">' + (currentLang === 'fr' ? 'Pièces jointes' : 'Attachments') + '</span>';
+  html += '<span class="comment-badge">' + getTaskAttachments(task.id).length + '</span>';
+  html += '</div>';
+  html += '<div class="attachments-list" id="attachments-list-' + task.id + '"></div>';
+  html += '<div class="attach-add-row">';
+  html += '<label class="attach-upload-btn">📎 ' + (currentLang === 'fr' ? 'Ajouter un fichier' : 'Add file') + '<input type="file" multiple style="display:none;" onchange="uploadTaskAttachments(' + task.id + ', this.files); this.value=\'\';"></label>';
+  html += '<span class="attach-status" id="attach-status-' + task.id + '"></span>';
+  html += '</div>';
+  html += '</div>';
+
   // === COMMENTS SECTION ===
   var taskComments = getTaskComments(task.id);
   html += '<div class="comments-section">';
@@ -6028,6 +6248,8 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '</div></div>'; // end modal + overlay
 
   document.getElementById('modal-container').innerHTML = html;
+  // D2 : remplir la liste des pièces jointes (token asynchrone à part)
+  renderAttachmentsSection(task.id);
 }
 
 function getRaciArray(varName) {
