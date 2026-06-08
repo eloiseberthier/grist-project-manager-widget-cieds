@@ -5977,6 +5977,9 @@ function openEditTaskModal(taskId, preserveAssignees) {
       // Assignés (multiples)
       html += '<div>';
       html += '<div class="st-pill-label">' + t('subtaskAssignee') + (currentLang === 'fr' ? ' (plusieurs possibles)' : ' (multiple)') + '</div>';
+      if (users.length > 6) {
+        html += '<input type="text" id="st-assignee-search-' + st.id + '" oninput="filterStAssignees(' + st.id + ', this.value)" placeholder="' + (currentLang === 'fr' ? '🔍 Rechercher un membre...' : '🔍 Search a member...') + '" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:4px;" autocomplete="off">';
+      }
       html += assigneeListHtml;
       html += '</div>';
       // Date + hours row
@@ -6570,6 +6573,17 @@ function cancelEditSubtask(subtaskId) {
   var editEl = document.getElementById('st-edit-' + subtaskId);
   if (viewEl) viewEl.style.display = 'flex';
   if (editEl) editEl.style.display = 'none';
+}
+
+// Filtre la liste des assignés d'une sous-tâche selon la saisie clavier
+function filterStAssignees(subtaskId, query) {
+  var box = document.getElementById('st-assignee-' + subtaskId);
+  if (!box) return;
+  var q = (query || '').toLowerCase().trim();
+  box.querySelectorAll('label').forEach(function(lbl) {
+    var name = (lbl.textContent || '').toLowerCase();
+    lbl.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+  });
 }
 
 async function saveEditSubtask(subtaskId, parentTaskId) {
