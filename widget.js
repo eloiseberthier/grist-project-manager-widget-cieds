@@ -5977,7 +5977,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
       // Assignés (multiples)
       html += '<div>';
       html += '<div class="st-pill-label">' + t('subtaskAssignee') + (currentLang === 'fr' ? ' (plusieurs possibles)' : ' (multiple)') + '</div>';
-      if (users.length > 6) {
+      if (users.length > 1) {
         html += '<input type="text" id="st-assignee-search-' + st.id + '" oninput="filterStAssignees(' + st.id + ', this.value)" placeholder="' + (currentLang === 'fr' ? '🔍 Rechercher un membre...' : '🔍 Search a member...') + '" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:4px;" autocomplete="off">';
       }
       html += assigneeListHtml;
