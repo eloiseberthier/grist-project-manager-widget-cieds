@@ -5912,7 +5912,11 @@ function openEditTaskModal(taskId, preserveAssignees) {
         var stPrioColor = st.Priority === 'high' ? '#ef4444' : '#94a3b8';
         html += '<span class="subtask-assignee-badge" style="background:' + stPrioColor + '20;color:' + stPrioColor + ';">' + (st.Priority === 'high' ? '🔴' : '⬇️') + '</span>';
       }
-      if (st.Assignee) html += '<span class="subtask-assignee-badge">👤 ' + sanitize(st.Assignee) + '</span>';
+      if (st.Assignee) {
+        st.Assignee.split(',').map(function(a) { return a.trim(); }).filter(Boolean).forEach(function(an) {
+          html += '<span class="subtask-assignee-badge">👤 ' + sanitize(an) + '</span>';
+        });
+      }
       if (stDueDateStr) html += '<span class="subtask-due-badge' + stDueClass + '">📅 ' + stDueDateStr + '</span>';
       if (st.Estimated_Hours) html += '<span class="subtask-assignee-badge">⏱ ' + st.Estimated_Hours + 'h</span>';
       if (st.Recurrence && st.Recurrence !== 'none') {
@@ -5928,11 +5932,18 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '<button class="subtask-delete" onclick="deleteSubtask(' + st.id + ', ' + task.id + ')" title="' + t('delete') + '">✕</button>';
       html += '</div>';
       // Edit view (hidden by default)
-      var userOptions = '<option value="">' + t('noAssignee') + '</option>';
-      for (var ui = 0; ui < users.length; ui++) {
-        var uSel = users[ui].Name === st.Assignee ? ' selected' : '';
-        userOptions += '<option value="' + sanitize(users[ui].Name) + '"' + uSel + '>' + sanitize(users[ui].Name) + '</option>';
+      // Assignés multiples : liste de cases à cocher (comme les tâches, séparés par virgule)
+      var stAssignees = (st.Assignee || '').split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+      var assigneeListHtml = '<div class="st-assignee-list" id="st-assignee-' + st.id + '" style="display:flex;flex-wrap:wrap;gap:4px 10px;max-height:84px;overflow-y:auto;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;">';
+      if (users.length === 0) {
+        assigneeListHtml += '<span style="font-size:11px;color:#94a3b8;">' + (currentLang === 'fr' ? 'Aucun membre' : 'No members') + '</span>';
       }
+      for (var ui = 0; ui < users.length; ui++) {
+        var uName = users[ui].Name;
+        var uChk = stAssignees.indexOf(uName) !== -1 ? ' checked' : '';
+        assigneeListHtml += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap;"><input type="checkbox" value="' + sanitize(uName) + '"' + uChk + '> ' + sanitize(uName) + '</label>';
+      }
+      assigneeListHtml += '</div>';
       var stDueDateInput = st.Due_Date ? new Date(st.Due_Date * 1000).toISOString().split('T')[0] : '';
       var stStatus = st.Status || 'todo';
       var stPriority = st.Priority || 'medium';
@@ -5963,10 +5974,14 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '</div>';
       html += '<input type="hidden" id="st-priority-' + st.id + '" value="' + stPriority + '">';
       html += '</div>';
-      // Assignee + date + hours row
+      // Assignés (multiples)
+      html += '<div>';
+      html += '<div class="st-pill-label">' + t('subtaskAssignee') + (currentLang === 'fr' ? ' (plusieurs possibles)' : ' (multiple)') + '</div>';
+      html += assigneeListHtml;
+      html += '</div>';
+      // Date + hours row
       html += '<div class="st-meta-row">';
       var stStartDateInput = st.Start_Date ? new Date(st.Start_Date * 1000).toISOString().split('T')[0] : '';
-      html += '<select id="st-assignee-' + st.id + '" style="flex:1;min-width:100px;">' + userOptions + '</select>';
       html += '<input type="date" class="subtask-edit-date" id="st-start-' + st.id + '" value="' + stStartDateInput + '" title="' + (currentLang === 'fr' ? 'Date début' : 'Start date') + '">';
       html += '<input type="date" class="subtask-edit-date" id="st-due-' + st.id + '" value="' + stDueDateInput + '" title="' + (currentLang === 'fr' ? 'Échéance' : 'Due date') + '">';
       html += '<input type="number" class="st-hours-input" id="st-hours-' + st.id + '" value="' + (st.Estimated_Hours || '') + '" placeholder="' + (currentLang === 'fr' ? 'Heures' : 'Hours') + '" min="0" step="0.5">';
@@ -6562,7 +6577,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var descInput     = document.getElementById('st-desc-'     + subtaskId);
   var statusSel     = document.getElementById('st-status-'   + subtaskId);
   var prioritySel   = document.getElementById('st-priority-' + subtaskId);
-  var assigneeSelect= document.getElementById('st-assignee-' + subtaskId);
+  var assigneeBox   = document.getElementById('st-assignee-' + subtaskId);
   var startDateInput= document.getElementById('st-start-'    + subtaskId);
   var dueDateInput  = document.getElementById('st-due-'      + subtaskId);
   var hoursInput    = document.getElementById('st-hours-'    + subtaskId);
@@ -6570,7 +6585,11 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   if (!titleInput) return;
   var newTitle = titleInput.value.trim();
   if (!newTitle) return;
-  var newAssignee = assigneeSelect ? assigneeSelect.value : '';
+  var newAssignee = '';
+  if (assigneeBox) {
+    var checked = assigneeBox.querySelectorAll('input[type="checkbox"]:checked');
+    newAssignee = Array.prototype.map.call(checked, function(c) { return c.value; }).join(', ');
+  }
   var newStartDate = startDateInput && startDateInput.value ? Math.floor(new Date(startDateInput.value).getTime() / 1000) : null;
   var newDueDate = dueDateInput && dueDateInput.value ? Math.floor(new Date(dueDateInput.value).getTime() / 1000) : null;
   var newStatus = statusSel ? statusSel.value : 'todo';
