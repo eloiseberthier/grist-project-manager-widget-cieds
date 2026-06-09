@@ -4513,7 +4513,8 @@ function renderGanttView() {
         for (var yme = 0; yme < totalMonths; yme++) {
           var yre = startYr + Math.floor(yme / 12); var moe = yme % 12;
           var mse = new Date(yre, moe, 1); var mee = new Date(yre, moe + 1, 0, 23, 59, 59, 999);
-          if (yTEnd <= mee && yExtEnd >= mse) { if (yExtStart === -1) yExtStart = yme; yExtEndIdx = yme; }
+          // Démarrer la prolongation le mois SUIVANT la fin de tâche (évite le chevauchement)
+          if (mse > yTEnd && yExtEnd >= mse) { if (yExtStart === -1) yExtStart = yme; yExtEndIdx = yme; }
         }
       }
       var yExtColor = getExtensionBarColor(task);
@@ -4624,7 +4625,8 @@ function renderGanttView() {
       if (mExtEnd && mTEnd && mExtEnd > mTEnd) {
         for (var me2 = 0; me2 < 12; me2++) {
           var ms2 = new Date(ganttYear, me2, 1); var me2e = new Date(ganttYear, me2 + 1, 0, 23, 59, 59, 999);
-          if (mTEnd <= me2e && mExtEnd >= ms2) { if (mExtStart === -1) mExtStart = me2; mExtEndI = me2; }
+          // Prolongation à partir du mois suivant la fin (évite le chevauchement)
+          if (ms2 > mTEnd && mExtEnd >= ms2) { if (mExtStart === -1) mExtStart = me2; mExtEndI = me2; }
         }
       }
       var mExtColor = getExtensionBarColor(task);
