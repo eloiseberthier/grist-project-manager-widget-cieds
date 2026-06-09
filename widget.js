@@ -264,7 +264,10 @@ var i18n = {
     recurrenceNone: 'Aucune',
     recurrenceDaily: 'Quotidienne',
     recurrenceWeekly: 'Hebdomadaire',
+    recurrenceBiweekly: 'Toutes les 2 semaines',
     recurrenceMonthly: 'Mensuelle',
+    recurrenceQuarterly: 'Trimestrielle',
+    recurrenceYearly: 'Annuelle',
     nextOccurrence: 'Prochaine occurrence créée',
     recurrenceExplain: 'Quand cette tâche est marquée "Terminée", une nouvelle occurrence est automatiquement créée avec les dates décalées.',
     generateMonth: 'Générer pour le mois',
@@ -602,7 +605,10 @@ var i18n = {
     recurrenceNone: 'None',
     recurrenceDaily: 'Daily',
     recurrenceWeekly: 'Weekly',
+    recurrenceBiweekly: 'Every 2 weeks',
     recurrenceMonthly: 'Monthly',
+    recurrenceQuarterly: 'Quarterly',
+    recurrenceYearly: 'Yearly',
     nextOccurrence: 'Next occurrence created',
     recurrenceExplain: 'When this task is marked "Done", a new occurrence is automatically created with shifted dates.',
     generateMonth: 'Generate for the month',
@@ -3686,7 +3692,7 @@ function renderTaskCard(task) {
     html += '<span class="task-card-time' + (isTimerRunning ? ' timer-running' : '') + '">⏱️ ' + formatDurationShort(totalTime) + (isTimerRunning ? ' ●' : '') + '</span>';
   }
   if (task.Recurrence && task.Recurrence !== 'none') {
-    var recLabel = task.Recurrence === 'daily' ? '🔄 D' : (task.Recurrence === 'weekly' ? '🔄 W' : '🔄 M');
+    var recLabel = recurrenceSymbol(task.Recurrence);
     html += '<span class="task-card-recurrence">' + recLabel + '</span>';
   }
   html += '</div>';
@@ -6028,7 +6034,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
       if (stDueDateStr) html += '<span class="subtask-due-badge' + stDueClass + '">📅 ' + stDueDateStr + '</span>';
       if (st.Estimated_Hours) html += '<span class="subtask-assignee-badge">⏱ ' + st.Estimated_Hours + 'h</span>';
       if (st.Recurrence && st.Recurrence !== 'none') {
-        var recSymbol = st.Recurrence === 'daily' ? '🔄 D' : (st.Recurrence === 'weekly' ? '🔄 W' : '🔄 M');
+        var recSymbol = recurrenceSymbol(st.Recurrence);
         html += '<span class="subtask-assignee-badge" title="' + t('recurrence') + '">'+  recSymbol + '</span>';
       }
       html += '</span>';
@@ -6105,7 +6111,10 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '<option value="none"' + (stRecur === 'none' ? ' selected' : '') + '>' + t('recurrenceNone') + '</option>';
       html += '<option value="daily"' + (stRecur === 'daily' ? ' selected' : '') + '>' + t('recurrenceDaily') + '</option>';
       html += '<option value="weekly"' + (stRecur === 'weekly' ? ' selected' : '') + '>' + t('recurrenceWeekly') + '</option>';
+      html += '<option value="biweekly"' + (stRecur === 'biweekly' ? ' selected' : '') + '>' + t('recurrenceBiweekly') + '</option>';
       html += '<option value="monthly"' + (stRecur === 'monthly' ? ' selected' : '') + '>' + t('recurrenceMonthly') + '</option>';
+      html += '<option value="quarterly"' + (stRecur === 'quarterly' ? ' selected' : '') + '>' + t('recurrenceQuarterly') + '</option>';
+      html += '<option value="yearly"' + (stRecur === 'yearly' ? ' selected' : '') + '>' + t('recurrenceYearly') + '</option>';
       html += '</select>';
       html += '</div>';
       // Actions
@@ -6370,7 +6379,10 @@ function openEditTaskModal(taskId, preserveAssignees) {
   html += '<option value="none"' + (!hasRecurrence ? ' selected' : '') + '>' + t('recurrenceNone') + '</option>';
   html += '<option value="daily"' + (task.Recurrence === 'daily' ? ' selected' : '') + '>' + t('recurrenceDaily') + '</option>';
   html += '<option value="weekly"' + (task.Recurrence === 'weekly' ? ' selected' : '') + '>' + t('recurrenceWeekly') + '</option>';
+  html += '<option value="biweekly"' + (task.Recurrence === 'biweekly' ? ' selected' : '') + '>' + t('recurrenceBiweekly') + '</option>';
   html += '<option value="monthly"' + (task.Recurrence === 'monthly' ? ' selected' : '') + '>' + t('recurrenceMonthly') + '</option>';
+  html += '<option value="quarterly"' + (task.Recurrence === 'quarterly' ? ' selected' : '') + '>' + t('recurrenceQuarterly') + '</option>';
+  html += '<option value="yearly"' + (task.Recurrence === 'yearly' ? ' selected' : '') + '>' + t('recurrenceYearly') + '</option>';
   html += '</select>';
   if (hasRecurrence) {
     html += '<div class="recurrence-explain">ℹ️ ' + t('recurrenceExplain') + '</div>';
@@ -6751,11 +6763,17 @@ async function generateSubtaskOccurrences(subtaskId, parentTaskId) {
   if (!st || !st.Recurrence || st.Recurrence === 'none') return;
   var baseDate = st.Due_Date ? new Date(st.Due_Date * 1000) : new Date();
   var actions = [];
-  var count = st.Recurrence === 'daily' ? 7 : (st.Recurrence === 'weekly' ? 4 : 3);
+  // Nombre d'occurrences générées selon la fréquence (fenêtre raisonnable)
+  var countMap = { daily: 7, weekly: 4, biweekly: 4, monthly: 3, quarterly: 4, yearly: 3 };
+  var count = countMap[st.Recurrence] || 3;
   for (var i = 1; i <= count; i++) {
     var d = new Date(baseDate);
     if (st.Recurrence === 'daily') d.setDate(d.getDate() + i);
     else if (st.Recurrence === 'weekly') d.setDate(d.getDate() + i * 7);
+    else if (st.Recurrence === 'biweekly') d.setDate(d.getDate() + i * 14);
+    else if (st.Recurrence === 'monthly') d.setMonth(d.getMonth() + i);
+    else if (st.Recurrence === 'quarterly') d.setMonth(d.getMonth() + i * 3);
+    else if (st.Recurrence === 'yearly') d.setFullYear(d.getFullYear() + i);
     else d.setMonth(d.getMonth() + i);
     actions.push(['AddRecord', SUBTASKS_TABLE, null, {
       Parent_Task_Id: parentTaskId,
@@ -7215,26 +7233,35 @@ async function generateOccurrences(taskId, period) {
   }
 }
 
+// Symbole court d'une récurrence (badge cartes/sous-tâches)
+function recurrenceSymbol(rec) {
+  var map = { daily: '🔄 J', weekly: '🔄 S', biweekly: '🔄 2S', monthly: '🔄 M', quarterly: '🔄 T', yearly: '🔄 A' };
+  return map[rec] || '🔄';
+}
+
+// B1 : avance une date (epoch s) selon la récurrence (calcul calendaire exact)
+function addRecurrenceToEpoch(epoch, rec) {
+  if (!epoch) return null;
+  var d = new Date(epoch * 1000);
+  switch (rec) {
+    case 'daily': d.setDate(d.getDate() + 1); break;
+    case 'weekly': d.setDate(d.getDate() + 7); break;
+    case 'biweekly': d.setDate(d.getDate() + 14); break;
+    case 'monthly': d.setMonth(d.getMonth() + 1); break;
+    case 'quarterly': d.setMonth(d.getMonth() + 3); break;
+    case 'yearly': d.setFullYear(d.getFullYear() + 1); break;
+    default: return epoch;
+  }
+  return Math.floor(d.getTime() / 1000);
+}
+
 async function createNextOccurrence(task) {
   if (!task.Recurrence || task.Recurrence === 'none') return;
-  
-  var newStartDate = null;
-  var newDueDate = null;
+
+  var newStartDate = addRecurrenceToEpoch(task.Start_Date, task.Recurrence);
+  var newDueDate = addRecurrenceToEpoch(task.Due_Date, task.Recurrence);
   var now = Math.floor(Date.now() / 1000);
-  
-  // Calculate next dates based on recurrence type
-  if (task.Recurrence === 'daily') {
-    if (task.Start_Date) newStartDate = task.Start_Date + 86400;
-    if (task.Due_Date) newDueDate = task.Due_Date + 86400;
-  } else if (task.Recurrence === 'weekly') {
-    if (task.Start_Date) newStartDate = task.Start_Date + 604800;
-    if (task.Due_Date) newDueDate = task.Due_Date + 604800;
-  } else if (task.Recurrence === 'monthly') {
-    // Add ~30 days
-    if (task.Start_Date) newStartDate = task.Start_Date + 2592000;
-    if (task.Due_Date) newDueDate = task.Due_Date + 2592000;
-  }
-  
+
   try {
     var record = {};
     setField(record, 'tasks', 'title', task.Title);
