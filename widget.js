@@ -5003,6 +5003,35 @@ function setGanttSort(value) {
   renderGanttView();
 }
 
+// A2 : export du Gantt complet en PDF (1 page à la taille réelle du diagramme)
+async function exportGanttPdf() {
+  var container = document.querySelector('#gantt-view .gantt-container');
+  var table = container ? container.querySelector('.gantt-table') : null;
+  if (!table) { showToast(currentLang === 'fr' ? 'Affichez d\'abord le Gantt' : 'Open the Gantt first', 'error'); return; }
+  if (typeof html2canvas === 'undefined' || !window.jspdf) {
+    showToast(currentLang === 'fr' ? 'Librairies PDF non chargées' : 'PDF libraries not loaded', 'error');
+    return;
+  }
+  showToast(currentLang === 'fr' ? 'Génération du PDF...' : 'Generating PDF...', 'info');
+  container.classList.add('gantt-exporting');
+  try {
+    var canvas = await html2canvas(table, { scale: 2, backgroundColor: '#ffffff', windowWidth: table.scrollWidth, windowHeight: table.scrollHeight });
+    container.classList.remove('gantt-exporting');
+    var imgData = canvas.toDataURL('image/png');
+    var jsPDF = window.jspdf.jsPDF;
+    var w = canvas.width, h = canvas.height;
+    var pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'px', format: [w, h], hotfixes: ['px_scaling'] });
+    pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+    var dateStr = new Date().toISOString().split('T')[0];
+    pdf.save('Gantt_' + dateStr + '.pdf');
+    showToast(currentLang === 'fr' ? 'PDF exporté ✓' : 'PDF exported ✓', 'success');
+  } catch (e) {
+    container.classList.remove('gantt-exporting');
+    console.error('exportGanttPdf:', e);
+    showToast((currentLang === 'fr' ? 'Erreur export PDF : ' : 'PDF export error: ') + e.message, 'error');
+  }
+}
+
 // A7 : mode plein écran du Gantt (utile quand la hauteur est insuffisante)
 function toggleGanttFullscreen() {
   var el = document.getElementById('tab-gantt');

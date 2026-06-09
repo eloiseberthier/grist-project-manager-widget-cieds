@@ -14,6 +14,9 @@
   <meta http-equiv="Expires" content="0" />
   <title>Gestion de Projet</title>
   <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <!-- Export PDF du Gantt (A2) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     /* ========== RESET & BASE ========== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1592,6 +1595,10 @@
     .gantt-table thead th.today { background: #fef2f2; }
     .gantt-table thead th.weekend { background: #f8fafc; }
     /* Mode plein écran du Gantt */
+    /* Pendant l'export PDF : neutraliser sticky et hauteur max pour capturer tout le Gantt */
+    .gantt-exporting { max-height: none !important; overflow: visible !important; }
+    .gantt-exporting .gantt-task-label,
+    .gantt-exporting .gantt-table thead th { position: static !important; }
     .gantt-fullscreen { position: fixed; inset: 0; z-index: 2000; background: #fff; margin: 0; padding: 16px; overflow: auto; }
     .gantt-fullscreen .gantt-container { max-height: calc(100vh - 120px); }
     .gantt-table {
@@ -4117,6 +4124,7 @@
           <button class="btn-secondary btn-sm" onclick="ganttExpandAll()" title="Tout déplier">⊞</button>
           <button class="btn-secondary btn-sm" onclick="ganttCollapseAll()" title="Tout replier">⊟</button>
           <button class="btn-secondary btn-sm" id="gantt-fullscreen-btn" onclick="toggleGanttFullscreen()" title="Plein écran">⛶</button>
+          <button class="btn-secondary btn-sm" onclick="exportGanttPdf()" title="Export PDF" data-i18n-title="exportPdf">📄 PDF</button>
         </div>
         <div class="gantt-view-btns" style="display:flex;gap:4px;">
           <button class="btn-secondary btn-sm active" onclick="setGanttMode('days')" data-gantt-mode="days" data-i18n="ganttDays">Jours</button>
@@ -4582,7 +4590,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=115"></script>
+  <script src="widget.js?v=116"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
