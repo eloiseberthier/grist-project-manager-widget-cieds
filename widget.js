@@ -4055,8 +4055,10 @@ function renderTableView() {
       html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" />' + stMilestoneMark + '<span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
       // Projet (vide : hérité du parent)
       html += '<td></td>';
-      // Statut
-      html += '<td><span class="status-badge status-' + stStatus + '">● ' + statusLabel(stStatus) + '</span></td>';
+      // Statut (couleur réelle du statut personnalisé)
+      var stStatusDef = getKanbanStatuses().find(function(s) { return s.key === stStatus; });
+      var stStatusColor = stStatusDef && stStatusDef.color ? stStatusDef.color : '#94a3b8';
+      html += '<td><span class="status-badge" style="background:' + stStatusColor + '20;color:' + stStatusColor + ';">● ' + statusLabel(stStatus) + '</span></td>';
       // Priorité
       html += '<td><span class="priority-dot ' + stDotClass + '"></span> ' + priorityLabel(st.Priority) + '</td>';
       // Assigné à
@@ -6122,12 +6124,14 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '</div>';
       html += '<input type="hidden" id="st-type-' + st.id + '" value="' + stType + '">';
       html += '</div>';
-      // Status pills
+      // Status pills — statuts personnalisés (getKanbanStatuses), avec couleur réelle
       html += '<div>';
       html += '<div class="st-pill-label">' + (currentLang === 'fr' ? 'Statut' : 'Status') + '</div>';
       html += '<div class="st-pill-group" id="st-status-group-' + st.id + '">';
-      ['todo','progress','done'].forEach(function(s) {
-        html += '<button type="button" class="st-pill' + (stStatus === s ? ' active-' + s : '') + '" onclick="setStPill(\'status\',' + st.id + ',\'' + s + '\',this)">' + stLbl[s] + '</button>';
+      getKanbanStatuses().forEach(function(s) {
+        var sLbl = (s.emoji ? s.emoji + ' ' : '') + (currentLang === 'fr' ? s.label_fr : s.label_en);
+        var sActiveStyle = (stStatus === s.key) ? ('background:' + (s.color || '#3b82f6') + ';color:#fff;border-color:' + (s.color || '#3b82f6') + ';') : '';
+        html += '<button type="button" class="st-pill" style="' + sActiveStyle + '" onclick="setStStatus(' + st.id + ',\'' + s.key + '\',this)">' + sanitize(sLbl) + '</button>';
       });
       html += '</div>';
       html += '<input type="hidden" id="st-status-' + st.id + '" value="' + stStatus + '">';
@@ -6722,6 +6726,19 @@ async function deleteSubtask(subtaskId, parentTaskId) {
 }
 
 // Toggle pill selection for status/priority
+// Sélecteur de statut de sous-tâche (statuts personnalisés avec couleur réelle)
+function setStStatus(subtaskId, value, btn) {
+  var hidden = document.getElementById('st-status-' + subtaskId);
+  if (hidden) hidden.value = value;
+  var grp = btn.parentNode;
+  if (grp) grp.querySelectorAll('.st-pill').forEach(function(p) {
+    p.className = 'st-pill'; p.style.background = ''; p.style.color = ''; p.style.borderColor = '';
+  });
+  var def = getKanbanStatuses().find(function(s) { return s.key === value; });
+  var color = (def && def.color) ? def.color : '#3b82f6';
+  btn.style.background = color; btn.style.color = '#fff'; btn.style.borderColor = color;
+}
+
 // B2 : sélecteur de type de sous-tâche (sous-tâche / jalon)
 function setStType(subtaskId, value, btn) {
   var hidden = document.getElementById('st-type-' + subtaskId);
