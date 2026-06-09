@@ -1576,6 +1576,14 @@ function getTaskCustomFieldValue(taskId, fieldId) {
   return cfv ? cfv.Value : '';
 }
 
+// B3 : concatène toutes les valeurs de champs personnalisés d'une tâche (pour la recherche)
+function getTaskCustomFieldsText(taskId) {
+  return customFieldValues
+    .filter(function(v) { return v.Task_Id === taskId && v.Value; })
+    .map(function(v) { return String(v.Value); })
+    .join(' ');
+}
+
 function isSubtaskBlocked(subtask) {
   if (!subtask.Blocked_By_Subtask_Id) return false;
   var blocker = subtasks.find(function(st) { return st.id === subtask.Blocked_By_Subtask_Id; });
@@ -3947,7 +3955,7 @@ function renderTableView() {
     if (tableFilterStatuses.length && tableFilterStatuses.indexOf(task.Status) === -1) return false;
     if (tableFilterPriorities.length && tableFilterPriorities.indexOf(task.Priority) === -1) return false;
     if (search) {
-      var text = (task.Title + ' ' + task.Description + ' ' + task.Assignee).toLowerCase();
+      var text = (task.Title + ' ' + task.Description + ' ' + task.Assignee + ' ' + getTaskCustomFieldsText(task.id)).toLowerCase();
       if (text.indexOf(search) === -1) return false;
     }
     return true;
@@ -4182,6 +4190,12 @@ function renderGanttSubtaskLabelCell(st, parentTaskId) {
   var html = '<td class="gantt-task-label gantt-subtask-cell gantt-clickable-label" onclick="openEditTaskModal(' + parentTaskId + ')"' + completedClass + '>';
   html += '<span style="font-size:10px;color:#94a3b8;margin-right:4px;">↳</span>';
   html += '<span style="font-size:11px;">' + sanitize(st.Title) + '</span>';
+  // A1 : indicateur de dépendance entre sous-tâches
+  var stBlocker = getSubtaskBlocker(st);
+  if (stBlocker) {
+    var depColor = stBlocker.Completed ? '#94a3b8' : '#ef4444';
+    html += '<span style="font-size:9px;color:' + depColor + ';margin-left:6px;white-space:nowrap;" title="' + (currentLang === 'fr' ? 'Dépend de' : 'Depends on') + ' : ' + sanitize(stBlocker.Title) + '">🔗 ' + sanitize(stBlocker.Title).substring(0, 14) + '</span>';
+  }
   if (st.Due_Date) html += '<span style="font-size:9px;color:#94a3b8;margin-left:6px;">📅 ' + formatDate(st.Due_Date) + '</span>';
   if (st.Assignee) html += '<span style="font-size:9px;color:#94a3b8;margin-left:4px;">👤 ' + sanitize(st.Assignee).split(',')[0].trim().substring(0, 10) + '</span>';
   html += '</td>';
