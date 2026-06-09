@@ -2063,6 +2063,10 @@ async function ensureTables() {
         if (stCols.indexOf('Start_Date') === -1) {
           stActions.push(['AddColumn', SUBTASKS_TABLE, 'Start_Date', { type: 'Date' }]);
         }
+        // B2 : type de sous-tâche (sous-tâche classique ou jalon)
+        if (stCols.indexOf('Type') === -1) {
+          stActions.push(['AddColumn', SUBTASKS_TABLE, 'Type', { type: 'Choice', widgetOptions: JSON.stringify({ choices: ['subtask', 'milestone'] }) }]);
+        }
         if (stActions.length > 0) {
           await grist.docApi.applyUserActions(stActions);
         }
@@ -2217,6 +2221,7 @@ async function loadAllData() {
           Start_Date: subtaskData.Start_Date ? subtaskData.Start_Date[i] : null,
           Estimated_Hours: subtaskData.Estimated_Hours ? subtaskData.Estimated_Hours[i] : null,
           Recurrence: subtaskData.Recurrence ? subtaskData.Recurrence[i] : 'none',
+          Type: subtaskData.Type ? subtaskData.Type[i] : 'subtask',
           Created_At: subtaskData.Created_At ? subtaskData.Created_At[i] : null
         });
       }
@@ -4046,7 +4051,8 @@ function renderTableView() {
       var stAssignee = st.Assignee ? st.Assignee.split(',').map(function(a) { return getUserDisplayName(a.trim()); }).join(', ') : '';
       var stOverdue = st.Due_Date && !st.Completed && st.Due_Date < _nowSec;
       // Colonne Tâche (titre)
-      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" /><span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
+      var stMilestoneMark = (st.Type === 'milestone') ? '<span title="Jalon" style="color:#7c3aed;margin-right:3px;">◆</span>' : '';
+      html += '<td><div class="subtask-indent"><span class="subtask-arrow">└</span><input type="checkbox" class="subtask-checkbox" ' + (st.Completed ? 'checked' : '') + ' onclick="event.stopPropagation();toggleSubtask(' + st.id + ', ' + !st.Completed + ')" style="cursor:pointer;width:14px;height:14px;margin-right:6px;flex-shrink:0;" />' + stMilestoneMark + '<span class="subtask-name' + (st.Completed ? ' completed' : '') + '">' + sanitize(st.Title) + '</span></div></td>';
       // Projet (vide : hérité du parent)
       html += '<td></td>';
       // Statut
@@ -4194,8 +4200,8 @@ function getGanttSubtasks(taskId) {
 function renderGanttSubtaskLabelCell(st, parentTaskId) {
   var completedClass = st.Completed ? ' style="text-decoration:line-through;opacity:0.5;"' : '';
   var html = '<td class="gantt-task-label gantt-subtask-cell gantt-clickable-label" onclick="openEditTaskModal(' + parentTaskId + ')"' + completedClass + '>';
-  html += '<span style="font-size:10px;color:#94a3b8;margin-right:4px;">↳</span>';
-  html += '<span style="font-size:11px;">' + sanitize(st.Title) + '</span>';
+  html += '<span style="font-size:10px;color:#94a3b8;margin-right:4px;">' + (isMilestone(st) ? '◆' : '↳') + '</span>';
+  html += '<span style="font-size:11px;' + (isMilestone(st) ? 'font-weight:700;' : '') + '">' + sanitize(st.Title) + '</span>';
   // A1 : indicateur de dépendance entre sous-tâches
   var stBlocker = getSubtaskBlocker(st);
   if (stBlocker) {
@@ -4208,19 +4214,29 @@ function renderGanttSubtaskLabelCell(st, parentTaskId) {
   return html;
 }
 
+function isMilestone(st) { return st && st.Type === 'milestone'; }
+
 // Couleur de barre pour une sous-tâche (verte si complétée, sinon hérite du statut parent)
+// B2 : un jalon reçoit en plus la classe gantt-bar-milestone (rendu losange, tous modes)
 function ganttSubtaskBarClass(st, parentTask) {
-  if (st.Completed) return 'gantt-bar-done';
-  if (parentTask.Status === 'progress') return 'gantt-bar-progress';
-  return 'gantt-bar-todo';
+  var base;
+  if (st.Completed) base = 'gantt-bar-done';
+  else if (parentTask.Status === 'progress') base = 'gantt-bar-progress';
+  else base = 'gantt-bar-todo';
+  return base + (isMilestone(st) ? ' gantt-bar-milestone' : '');
 }
 
-// Bornes de la sous-tâche : début = Start_Date du parent (ou Due_Date subtask en fallback)
+// Bornes de la sous-tâche. B2 : un jalon est une date unique (Due_Date) → start = end.
 function getGanttSubtaskRange(st, parentTask) {
   var stEnd = st.Due_Date ? new Date(st.Due_Date * 1000) : (parentTask.Due_Date ? new Date(parentTask.Due_Date * 1000) : null);
-  var stStart = st.Start_Date ? new Date(st.Start_Date * 1000) : (stEnd ? new Date(stEnd) : null);
   if (!stEnd) return { start: new Date(), end: new Date() };
-  if (stStart > stEnd) stStart = new Date(stEnd);
+  var stStart;
+  if (isMilestone(st)) {
+    stStart = new Date(stEnd); // jalon : un seul jour
+  } else {
+    stStart = st.Start_Date ? new Date(st.Start_Date * 1000) : new Date(stEnd);
+    if (stStart > stEnd) stStart = new Date(stEnd);
+  }
   stStart.setHours(0, 0, 0, 0);
   stEnd.setHours(23, 59, 59, 999);
   return { start: stStart, end: stEnd };
@@ -6097,6 +6113,15 @@ function openEditTaskModal(taskId, preserveAssignees) {
       html += '<input type="text" class="subtask-edit-title" id="st-title-' + st.id + '" value="' + sanitize(st.Title) + '" placeholder="' + (currentLang === 'fr' ? 'Titre de la sous-tâche...' : 'Subtask title...') + '">';
       // Description
       html += '<textarea class="subtask-edit-title" id="st-desc-' + st.id + '" rows="2" placeholder="' + (currentLang === 'fr' ? 'Description (optionnel)...' : 'Description (optional)...') + '" style="resize:vertical;">' + sanitize(st.Description || '') + '</textarea>';
+      // B2 : type (sous-tâche / jalon)
+      var stType = st.Type || 'subtask';
+      html += '<div><div class="st-pill-label">' + (currentLang === 'fr' ? 'Type' : 'Type') + '</div>';
+      html += '<div class="st-pill-group">';
+      html += '<button type="button" class="st-pill' + (stType !== 'milestone' ? ' active-progress' : '') + '" onclick="setStType(' + st.id + ',\'subtask\',this)">' + (currentLang === 'fr' ? '↳ Sous-tâche' : '↳ Subtask') + '</button>';
+      html += '<button type="button" class="st-pill' + (stType === 'milestone' ? ' active-progress' : '') + '" onclick="setStType(' + st.id + ',\'milestone\',this)">' + (currentLang === 'fr' ? '◆ Jalon (1 date)' : '◆ Milestone (1 date)') + '</button>';
+      html += '</div>';
+      html += '<input type="hidden" id="st-type-' + st.id + '" value="' + stType + '">';
+      html += '</div>';
       // Status pills
       html += '<div>';
       html += '<div class="st-pill-label">' + (currentLang === 'fr' ? 'Statut' : 'Status') + '</div>';
@@ -6697,6 +6722,15 @@ async function deleteSubtask(subtaskId, parentTaskId) {
 }
 
 // Toggle pill selection for status/priority
+// B2 : sélecteur de type de sous-tâche (sous-tâche / jalon)
+function setStType(subtaskId, value, btn) {
+  var hidden = document.getElementById('st-type-' + subtaskId);
+  if (hidden) hidden.value = value;
+  var grp = btn.parentNode;
+  if (grp) grp.querySelectorAll('.st-pill').forEach(function(p) { p.className = 'st-pill'; });
+  btn.className = 'st-pill active-progress';
+}
+
 function setStPill(field, subtaskId, value, btn) {
   var group = document.getElementById('st-' + field + '-group-' + subtaskId);
   var hidden = document.getElementById('st-' + field + '-' + subtaskId);
@@ -6756,6 +6790,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var newStartDate = startDateInput && startDateInput.value ? Math.floor(new Date(startDateInput.value).getTime() / 1000) : null;
   var newDueDate = dueDateInput && dueDateInput.value ? Math.floor(new Date(dueDateInput.value).getTime() / 1000) : null;
   var newStatus = statusSel ? statusSel.value : 'todo';
+  var typeEl = document.getElementById('st-type-' + subtaskId);
   var fields = {
     Title: newTitle,
     Description: descInput ? descInput.value : '',
@@ -6764,7 +6799,8 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
     Priority: prioritySel ? prioritySel.value : 'medium',
     Assignee: newAssignee,
     Estimated_Hours: hoursInput && hoursInput.value ? parseFloat(hoursInput.value) : null,
-    Recurrence: recurSel ? recurSel.value : 'none'
+    Recurrence: recurSel ? recurSel.value : 'none',
+    Type: typeEl ? typeEl.value : 'subtask'
   };
   if (newStartDate) fields.Start_Date = newStartDate;
   if (newDueDate) fields.Due_Date = newDueDate;
