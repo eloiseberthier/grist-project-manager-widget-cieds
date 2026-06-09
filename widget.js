@@ -50,6 +50,9 @@ var i18n = {
     ganttSortPriority: 'Priorité',
     ganttSortAlpha: 'A → Z',
     ganttSortDue: 'Échéance',
+    ganttCustom: 'Personnalisé',
+    ganttRangeFrom: 'Du :',
+    ganttRangeTo: 'au :',
     extensionDate: 'Date de prolongation',
     extensionTooltip: 'Prolongation : dépassement de l\'échéance',
     autoExtend: 'Prolongation auto',
@@ -385,6 +388,9 @@ var i18n = {
     ganttSortPriority: 'Priority',
     ganttSortAlpha: 'A → Z',
     ganttSortDue: 'Due date',
+    ganttCustom: 'Custom',
+    ganttRangeFrom: 'From:',
+    ganttRangeTo: 'to:',
     extensionDate: 'Extension date',
     extensionTooltip: 'Extension: overdue beyond deadline',
     autoExtend: 'Auto extend',
@@ -813,6 +819,8 @@ async function saveSetting(key, value) {
 }
 var ganttMode = 'days';
 var ganttSort = 'default'; // 'default' | 'priority' | 'alpha' | 'due'
+var ganttCustomStart = ''; // mode 'custom' : date de début (YYYY-MM-DD)
+var ganttCustomEnd = '';   // mode 'custom' : date de fin (YYYY-MM-DD)
 var ganttYear = new Date().getFullYear();
 var ganttMonth = new Date().getMonth();
 var expandedGanttTasks = {}; // taskId -> true quand les sous-tâches sont visibles dans le Gantt
@@ -4694,9 +4702,24 @@ function renderGanttView() {
     return;
   }
 
-  // ===== DAYS MODE =====
-  var startDate = new Date(ganttYear, ganttMonth - 1, 1);
-  var endDate = new Date(ganttYear, ganttMonth + 2, 0);
+  // ===== DAYS MODE (et mode PERSONNALISÉ : mêmes colonnes-jours sur une plage libre) =====
+  var startDate, endDate;
+  if (ganttMode === 'custom' && ganttCustomStart && ganttCustomEnd) {
+    startDate = new Date(ganttCustomStart + 'T00:00:00');
+    endDate = new Date(ganttCustomEnd + 'T00:00:00');
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || endDate < startDate) {
+      // Plage invalide → repli sur la fenêtre par défaut
+      startDate = new Date(ganttYear, ganttMonth - 1, 1);
+      endDate = new Date(ganttYear, ganttMonth + 2, 0);
+    } else {
+      // Limiter à ~400 jours pour éviter une grille démesurée
+      var maxEnd = new Date(startDate); maxEnd.setDate(maxEnd.getDate() + 400);
+      if (endDate > maxEnd) endDate = maxEnd;
+    }
+  } else {
+    startDate = new Date(ganttYear, ganttMonth - 1, 1);
+    endDate = new Date(ganttYear, ganttMonth + 2, 0);
+  }
   var days = [];
   var d = new Date(startDate);
   while (d <= endDate) {
@@ -4928,6 +4951,30 @@ function ganttCollapseAll() {
 
 function setGanttMode(mode) {
   ganttMode = mode;
+  // A3 : afficher la zone de dates uniquement en mode personnalisé
+  var rangeBox = document.getElementById('gantt-custom-range');
+  if (rangeBox) rangeBox.style.display = (mode === 'custom') ? 'flex' : 'none';
+  if (mode === 'custom') {
+    // Pré-remplir une plage par défaut (mois précédent → 2 mois) si vide
+    if (!ganttCustomStart || !ganttCustomEnd) {
+      var ds = new Date(ganttYear, ganttMonth - 1, 1);
+      var de = new Date(ganttYear, ganttMonth + 2, 0);
+      ganttCustomStart = ds.toISOString().split('T')[0];
+      ganttCustomEnd = de.toISOString().split('T')[0];
+    }
+    var sEl = document.getElementById('gantt-custom-start');
+    var eEl = document.getElementById('gantt-custom-end');
+    if (sEl) sEl.value = ganttCustomStart;
+    if (eEl) eEl.value = ganttCustomEnd;
+  }
+  renderGanttView();
+}
+
+function setGanttCustomRange() {
+  var sEl = document.getElementById('gantt-custom-start');
+  var eEl = document.getElementById('gantt-custom-end');
+  if (sEl) ganttCustomStart = sEl.value;
+  if (eEl) ganttCustomEnd = eEl.value;
   renderGanttView();
 }
 

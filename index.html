@@ -4124,7 +4124,14 @@
           <button class="btn-secondary btn-sm" onclick="setGanttMode('months')" data-gantt-mode="months" data-i18n="ganttMonths">Mois</button>
           <button class="btn-secondary btn-sm" onclick="setGanttMode('year')" data-gantt-mode="year" data-i18n="ganttYear2">Année</button>
           <button class="btn-secondary btn-sm" onclick="setGanttMode('twoyears')" data-gantt-mode="twoyears" data-i18n="ganttTwoYears">2 Ans</button>
+          <button class="btn-secondary btn-sm" onclick="setGanttMode('custom')" data-gantt-mode="custom" data-i18n="ganttCustom">Personnalisé</button>
         </div>
+      </div>
+      <div id="gantt-custom-range" style="display:none;align-items:center;gap:8px;padding:6px 0 0;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#64748b;" data-i18n="ganttRangeFrom">Du :</span>
+        <input type="date" id="gantt-custom-start" onchange="setGanttCustomRange()" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+        <span style="font-size:12px;color:#64748b;" data-i18n="ganttRangeTo">au :</span>
+        <input type="date" id="gantt-custom-end" onchange="setGanttCustomRange()" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
       </div>
       <div id="gantt-view"></div>
     </div>
@@ -4575,7 +4582,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=112"></script>
+  <script src="widget.js?v=113"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
