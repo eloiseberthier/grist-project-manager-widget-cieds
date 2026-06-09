@@ -1580,10 +1580,20 @@
       background: white;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
-      overflow-x: auto;
+      overflow: auto;
+      max-height: 70vh;
       position: relative;
       cursor: grab;
     }
+    /* A7 : en-tête figé au défilement vertical (2 lignes : mois + jours/colonnes) */
+    .gantt-table thead th { position: sticky; top: 0; z-index: 5; background: #fff; }
+    .gantt-table thead tr:first-child th { height: 30px; }
+    .gantt-table thead tr:nth-child(2) th { top: 30px; }
+    .gantt-table thead th.today { background: #fef2f2; }
+    .gantt-table thead th.weekend { background: #f8fafc; }
+    /* Mode plein écran du Gantt */
+    .gantt-fullscreen { position: fixed; inset: 0; z-index: 2000; background: #fff; margin: 0; padding: 16px; overflow: auto; }
+    .gantt-fullscreen .gantt-container { max-height: calc(100vh - 120px); }
     .gantt-table {
       width: 100%;
       border-collapse: separate;
@@ -4095,10 +4105,18 @@
         <select id="gantt-year" onchange="setGanttYear(this.value)"></select>
         <button class="gantt-today btn-sm" onclick="ganttToday()" data-i18n="ganttToday">Aujourd'hui</button>
         <button class="btn-secondary btn-sm" onclick="ganttNav(1)">▶</button>
+        <span style="margin-left:8px;" data-i18n="ganttSortLabel">Trier :</span>
+        <select id="gantt-sort" onchange="setGanttSort(this.value)">
+          <option value="default" data-i18n="ganttSortDefault">Défaut</option>
+          <option value="priority" data-i18n="ganttSortPriority">Priorité</option>
+          <option value="alpha" data-i18n="ganttSortAlpha">A → Z</option>
+          <option value="due" data-i18n="ganttSortDue">Échéance</option>
+        </select>
         <div style="flex:1;"></div>
         <div style="display:flex;gap:4px;">
           <button class="btn-secondary btn-sm" onclick="ganttExpandAll()" title="Tout déplier">⊞</button>
           <button class="btn-secondary btn-sm" onclick="ganttCollapseAll()" title="Tout replier">⊟</button>
+          <button class="btn-secondary btn-sm" id="gantt-fullscreen-btn" onclick="toggleGanttFullscreen()" title="Plein écran">⛶</button>
         </div>
         <div class="gantt-view-btns" style="display:flex;gap:4px;">
           <button class="btn-secondary btn-sm active" onclick="setGanttMode('days')" data-gantt-mode="days" data-i18n="ganttDays">Jours</button>
@@ -4557,7 +4575,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=110"></script>
+  <script src="widget.js?v=111"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

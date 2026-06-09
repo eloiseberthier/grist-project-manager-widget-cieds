@@ -45,6 +45,11 @@ var i18n = {
     ganttMonths: 'Mois',
     ganttYear2: 'Année',
     ganttTwoYears: '2 Ans',
+    ganttSortLabel: 'Trier :',
+    ganttSortDefault: 'Défaut',
+    ganttSortPriority: 'Priorité',
+    ganttSortAlpha: 'A → Z',
+    ganttSortDue: 'Échéance',
     extensionDate: 'Date de prolongation',
     extensionTooltip: 'Prolongation : dépassement de l\'échéance',
     autoExtend: 'Prolongation auto',
@@ -375,6 +380,11 @@ var i18n = {
     ganttMonths: 'Months',
     ganttYear2: 'Year',
     ganttTwoYears: '2 Years',
+    ganttSortLabel: 'Sort:',
+    ganttSortDefault: 'Default',
+    ganttSortPriority: 'Priority',
+    ganttSortAlpha: 'A → Z',
+    ganttSortDue: 'Due date',
     extensionDate: 'Extension date',
     extensionTooltip: 'Extension: overdue beyond deadline',
     autoExtend: 'Auto extend',
@@ -802,6 +812,7 @@ async function saveSetting(key, value) {
   }
 }
 var ganttMode = 'days';
+var ganttSort = 'default'; // 'default' | 'priority' | 'alpha' | 'due'
 var ganttYear = new Date().getFullYear();
 var ganttMonth = new Date().getMonth();
 var expandedGanttTasks = {}; // taskId -> true quand les sous-tâches sont visibles dans le Gantt
@@ -4282,6 +4293,24 @@ function renderGanttView() {
   });
 
   var tasksWithDates = getFilteredTasks().filter(function(task) { return task.Start_Date || task.Due_Date; });
+  // A8 : tri du Gantt
+  var ganttSortSel = document.getElementById('gantt-sort');
+  if (ganttSortSel && ganttSortSel.value !== ganttSort) ganttSortSel.value = ganttSort;
+  if (ganttSort === 'priority') {
+    var prioOrder = { high: 0, medium: 1, low: 2 };
+    tasksWithDates.sort(function(a, b) {
+      var pa = prioOrder[a.Priority] !== undefined ? prioOrder[a.Priority] : 3;
+      var pb = prioOrder[b.Priority] !== undefined ? prioOrder[b.Priority] : 3;
+      return pa - pb;
+    });
+  } else if (ganttSort === 'alpha') {
+    tasksWithDates.sort(function(a, b) { return (a.Title || '').localeCompare(b.Title || ''); });
+  } else if (ganttSort === 'due') {
+    tasksWithDates.sort(function(a, b) {
+      var da = a.Due_Date || a.Start_Date || 0, db = b.Due_Date || b.Start_Date || 0;
+      return da - db;
+    });
+  }
   document.getElementById('gantt-task-count').textContent = '(' + tasksWithDates.length + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + ')';
 
   var today = new Date();
@@ -4858,19 +4887,21 @@ function setGanttYear(value) {
 }
 
 function ganttNav(dir) {
-  if (ganttMode === 'months') {
+  if (ganttMode === 'months' || ganttMode === 'year' || ganttMode === 'twoyears') {
+    // Modes annuels : on navigue par année
     ganttYear += dir;
     ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   } else if (ganttMode === 'weeks') {
-    // Navigate by 3 months (quarter) at a time
+    // Navigation par trimestre (3 mois)
     ganttMonth += dir * 3;
     if (ganttMonth > 11) { ganttMonth -= 12; ganttYear++; }
     if (ganttMonth < 0) { ganttMonth += 12; ganttYear--; }
     ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   } else {
-    ganttMonth += dir * 2;
-    if (ganttMonth > 11) { ganttMonth = 0; ganttYear++; }
-    if (ganttMonth < 0) { ganttMonth = 10; ganttYear--; }
+    // Mode jours (fenêtre de 3 mois) : on avance d'1 mois à la fois
+    ganttMonth += dir;
+    if (ganttMonth > 11) { ganttMonth -= 12; ganttYear++; }
+    if (ganttMonth < 0) { ganttMonth += 12; ganttYear--; }
     ganttYear = Math.max(2020, Math.min(2050, ganttYear));
   }
   renderGanttView();
@@ -4896,6 +4927,20 @@ function ganttCollapseAll() {
 function setGanttMode(mode) {
   ganttMode = mode;
   renderGanttView();
+}
+
+function setGanttSort(value) {
+  ganttSort = value;
+  renderGanttView();
+}
+
+// A7 : mode plein écran du Gantt (utile quand la hauteur est insuffisante)
+function toggleGanttFullscreen() {
+  var el = document.getElementById('tab-gantt');
+  var btn = document.getElementById('gantt-fullscreen-btn');
+  if (!el) return;
+  var on = el.classList.toggle('gantt-fullscreen');
+  if (btn) btn.title = on ? (currentLang === 'fr' ? 'Quitter le plein écran' : 'Exit fullscreen') : (currentLang === 'fr' ? 'Plein écran' : 'Fullscreen');
 }
 
 // =============================================================================
@@ -7234,7 +7279,9 @@ async function createTask() {
   setField(record, 'tasks', 'category', document.getElementById('task-category').value.trim());
   setField(record, 'tasks', 'projectId', projectId);
   setField(record, 'tasks', 'createdAt', Math.floor(Date.now() / 1000));
-  
+  // B4 : prolongation auto activée par défaut sur les nouvelles tâches (modifiable ensuite)
+  record.Auto_Extend = true;
+
   // Add Tag only if the element exists
   var tagEl = document.getElementById('task-tag');
   if (tagEl) {
@@ -9974,5 +10021,19 @@ if (!isInsideGrist()) {
     await cleanupOldNotifications();
     updateNotificationBadge();
     restoreActiveTab();
+
+    // A6 : synchro live — recharge si la table liée change (édition directe dans Grist,
+    // autre utilisateur). Debounce + on ne perturbe pas une saisie (modale ouverte).
+    if (typeof grist.onRecords === 'function') {
+      var _liveReloadTimer = null;
+      grist.onRecords(function() {
+        if (_liveReloadTimer) clearTimeout(_liveReloadTimer);
+        _liveReloadTimer = setTimeout(function() {
+          var modal = document.getElementById('modal-container');
+          if (modal && modal.innerHTML.trim() !== '') return;
+          loadAllData();
+        }, 500);
+      });
+    }
   })();
 }
