@@ -758,6 +758,30 @@ function getKanbanStatuses() {
 }
 async function saveKanbanStatuses() {
   await saveSetting('kanban_statuses', JSON.stringify(customKanbanStatuses));
+  syncSubtaskStatusChoices();
+}
+
+// Synchronise les choix (+ couleurs) de la colonne Status de PM_Subtasks avec les
+// statuts Kanban personnalisés → la grille Grist native affiche les bonnes pastilles.
+async function syncSubtaskStatusChoices() {
+  try {
+    var statuses = getKanbanStatuses();
+    var choices = statuses.map(function(s) { return s.key; });
+    if (choices.indexOf('archived') === -1) choices.push('archived');
+    var choiceOptions = {};
+    statuses.forEach(function(s) {
+      if (s.color) choiceOptions[s.key] = { fillColor: s.color, textColor: '#ffffff' };
+    });
+    var widgetOptions = JSON.stringify({ widget: 'TextBox', choices: choices, choiceOptions: choiceOptions });
+    // Évite les réécritures inutiles (signature en cache navigateur)
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('pm_subtask_status_sig') === widgetOptions) return;
+    await grist.docApi.applyUserActions([
+      ['ModifyColumn', SUBTASKS_TABLE, 'Status', { widgetOptions: widgetOptions }]
+    ]);
+    if (typeof localStorage !== 'undefined') localStorage.setItem('pm_subtask_status_sig', widgetOptions);
+  } catch (e) {
+    console.log('syncSubtaskStatusChoices:', e.message);
+  }
 }
 function getStatusLabel(key) {
   var statuses = getKanbanStatuses();
@@ -10193,6 +10217,8 @@ if (!isInsideGrist()) {
     await cleanupOldNotifications();
     updateNotificationBadge();
     restoreActiveTab();
+    // Synchronise les choix de la colonne Status des sous-tâches avec les statuts personnalisés
+    if (isOwner) syncSubtaskStatusChoices();
 
     // A6 : synchro live — recharge si la table liée change (édition directe dans Grist,
     // autre utilisateur). Debounce + on ne perturbe pas une saisie (modale ouverte).
