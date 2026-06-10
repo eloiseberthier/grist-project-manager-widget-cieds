@@ -7438,9 +7438,9 @@ function openNewTemplateModal(tplId) {
 }
 
 function closeModal(e) {
-  if (e.target.classList.contains('modal-overlay')) {
-    document.getElementById('modal-container').innerHTML = '';
-  }
+  // Désactivé volontairement : on NE ferme PAS au clic extérieur (évite les fermetures
+  // accidentelles, notamment quand une sélection de texte se relâche hors de la modale).
+  // La fermeture se fait via la croix (✕) ou le bouton Annuler (closeModalForce).
 }
 
 function closeModalForce() {
