@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Note DSI — Notifications e-mail (widget Grist)</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; font-size: 12px; line-height: 1.55; margin: 0; }
+  h1 { font-size: 19px; color: #1e293b; margin: 0 0 2px; }
+  .subtitle { color: #64748b; font-size: 12px; margin: 0 0 14px; }
+  h2 { font-size: 14px; color: #1d4ed8; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #dbeafe; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #b91c1c; }
+  strong { color: #0f172a; }
+  .objet { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
+  /* Diagramme */
+  .flow { margin: 12px auto; width: 100%; max-width: 460px; }
+  .node { border: 1.5px solid #c7d2fe; background: #f5f7ff; border-radius: 10px; padding: 10px 14px; text-align: center; }
+  .node .t { font-weight: 700; color: #312e81; font-size: 12px; }
+  .node .s { color: #64748b; font-size: 10px; }
+  .node.accent { border-color: #4f46e5; background: #eef2ff; }
+  .node.mail { border-color: #16a34a; background: #f0fdf4; }
+  .node.mail .t { color: #15803d; }
+  .arrow { text-align: center; color: #94a3b8; font-size: 14px; line-height: 1.1; margin: 3px 0; }
+  .arrow small { display: block; color: #64748b; font-size: 9.5px; }
+  table.kv { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  table.kv td, table.kv th { border: 1px solid #e2e8f0; padding: 6px 8px; font-size: 11px; vertical-align: top; }
+  table.kv th { background: #1e293b; color: #fff; text-align: left; }
+  .ok { color: #15803d; font-weight: 700; }
+  .foot { margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 10px; }
+  .pill { display:inline-block; background:#ede9fe; color:#5b21b6; border-radius:999px; padding:1px 8px; font-size:10px; font-weight:700; }
+</style>
+</head>
+<body>
+
+  <h1>Note technique — Notifications e-mail du widget « Gestion de projet » (Grist)</h1>
+  <p class="subtitle">À destination de la Direction des Systèmes d'Information</p>
+
+  <div class="objet">
+    <strong>Objet :</strong> activer l'envoi d'e-mails de notification (ajout / modification de tâche) pour le widget Grist, <strong>en restant intégralement dans le SI de l'organisation</strong>.
+  </div>
+
+  <h2>1. Besoin</h2>
+  <p>Le widget « Gestion de projet » (widget Grist personnalisé) doit <strong>prévenir par e-mail</strong> les agents concernés (rôles Responsable / Approbateur / Consulté / Informé) lorsqu'une tâche les concernant est <strong>créée ou modifiée</strong>.</p>
+  <p>Contrainte technique : <strong>un widget Grist ne peut pas envoyer d'e-mail</strong> (bac à sable navigateur) et Grist n'envoie pas de mail nativement sur changement de donnée. La voie officielle repose sur un <strong>webhook Grist</strong> + un <strong>relais d'automatisation interne</strong> qui envoie l'e-mail via le SMTP de l'organisation.</p>
+
+  <h2>2. Architecture proposée (100 % interne)</h2>
+  <div class="flow">
+    <div class="node"><div class="t">Widget « Gestion de projet »</div><div class="s">dans Grist</div></div>
+    <div class="arrow">↓<small>écrit une ligne par agent concerné</small></div>
+    <div class="node"><div class="t">Table Grist&nbsp;: PM_Notifications</div></div>
+    <div class="arrow">↓<small>Webhook Grist — événement « Add »</small></div>
+    <div class="node accent"><div class="t">Relais interne</div><div class="s">n8n auto-hébergé&nbsp;&nbsp;ou&nbsp;&nbsp;Power Automate (M365)</div></div>
+    <div class="arrow">↓<small>SMTP / Exchange interne</small></div>
+    <div class="node mail"><div class="t">E-mail à l'agent</div><div class="s">@votre-domaine</div></div>
+  </div>
+  <p style="text-align:center;"><span class="pill">Aucune donnée ne sort du SI</span> — relais et serveur d'envoi internes.</p>
+
+  <h2>3. Données transmises (minimisation)</h2>
+  <p>À chaque notification, <strong>uniquement</strong> :</p>
+  <ul>
+    <li>l'<strong>e-mail professionnel</strong> du destinataire (l'agent concerné) ;</li>
+    <li>le <strong>libellé / message</strong> de la tâche ;</li>
+    <li>le <strong>type d'événement</strong> (création / modification) ;</li>
+    <li>l'<strong>identifiant</strong> de la tâche.</li>
+  </ul>
+  <p>Pas de pièce jointe, pas de donnée sensible, pas de donnée nominative au-delà de l'e-mail professionnel.</p>
+
+  <h2>4. Demandes à la DSI</h2>
+  <ol>
+    <li><strong>Héberger le relais en interne</strong> : soit <strong>n8n auto-hébergé</strong> sur l'infrastructure de l'organisation, soit un <strong>flux Power Automate</strong> (si Microsoft 365 est déjà en place). <em>Un workflow prêt à l'emploi est fourni (fichiers .json + guide).</em></li>
+    <li><strong>Autoriser le webhook côté Grist</strong> : variable serveur <code>ALLOWED_WEBHOOK_DOMAINS</code> = le <strong>domaine interne du relais</strong> (ex. <code>n8n.intra.votre-domaine</code>). Aucune adresse externe.</li>
+    <li><strong>Donner accès au SMTP / Exchange interne</strong> pour l'envoi, idéalement via un <strong>compte d'envoi dédié</strong> (ex. <code>notifications-projets@votre-domaine</code>).</li>
+    <li><strong>Flux réseau</strong> : autoriser le flux <strong>Grist → relais</strong> (interne à interne).</li>
+  </ol>
+
+  <h2>5. Garanties sécurité / RGPD</h2>
+  <ul>
+    <li><strong>Données dans le périmètre du SI</strong> : relais + SMTP internes, <span class="ok">rien vers un service externe</span>.</li>
+    <li><strong>Webhook restreint</strong> : limité à la table dédiée <code>PM_Notifications</code>, événement <code>Add</code> uniquement.</li>
+    <li><strong>Authentification du webhook</strong> possible : <strong>en-tête de sécurité</strong> (secret partagé) vérifié par le relais, contre tout appel non autorisé.</li>
+    <li><strong>Traçabilité</strong> : journaux / exécutions du relais sous contrôle DSI.</li>
+    <li><strong>Minimisation</strong> : seuls les champs strictement nécessaires (cf. §3) sont transmis.</li>
+  </ul>
+
+  <h2>6. Effort &amp; éléments fournis</h2>
+  <ul>
+    <li>Le <strong>widget est déjà prêt</strong> (il alimente <code>PM_Notifications</code> automatiquement) — rien à développer côté Grist.</li>
+    <li><strong>Workflow d'envoi fourni</strong> clé en main (n8n) + <strong>guide pas-à-pas</strong> (procédure complète + variante Power Automate).</li>
+    <li>Mise en place estimée : <strong>quelques heures</strong> côté DSI (déploiement du relais + réglage du webhook + compte SMTP).</li>
+  </ul>
+
+  <table class="kv">
+    <tr><th style="width:50%;">Ce qui est fourni</th><th>Ce qui est attendu de la DSI</th></tr>
+    <tr>
+      <td>Widget + table <code>PM_Notifications</code> auto-alimentée · Workflow d'automatisation prêt à importer · Guides d'installation</td>
+      <td>Relais interne (n8n / Power Automate) · Réglage <code>ALLOWED_WEBHOOK_DOMAINS</code> · Accès SMTP interne · Ouverture de flux interne</td>
+    </tr>
+  </table>
+
+  <div class="foot">
+    Documents joints : procédure complète d'installation, workflows prêts à importer, guide Power Automate. &nbsp;·&nbsp; Contact projet : ________________________
+  </div>
+
+</body>
+</html>
