@@ -1,6 +1,6 @@
 # Note à destination de la DSI — Notifications e-mail du widget « Gestion de projet » Grist
 
-**Objet :** activer l'envoi d'e-mails de notification (ajout/modification de tâche) pour le widget Grist, **en restant intégralement dans le SI de la collectivité**.
+**Objet :** activer l'envoi d'e-mails de notification (ajout/modification de tâche) pour le widget Grist, **en restant intégralement dans le SI de l'organisation**.
 
 ---
 
@@ -22,7 +22,7 @@ Table Grist  PM_Notifications   ──►  Webhook Grist (événement « Add »)
                          Relais interne (n8n auto-hébergé OU Power Automate M365)
                                           │
                                           ▼
-                          SMTP / Exchange interne  ──►  e-mail à l'agent (@grandlyon.fr)
+                          SMTP / Exchange interne  ──►  e-mail à l'agent (@votre-domaine)
 ```
 
 **Aucune donnée ne sort du SI** : le relais et le serveur d'envoi sont internes.
@@ -39,9 +39,9 @@ Pas de pièce jointe, pas de contenu sensible, pas de donnée nominative au-del�
 
 ## 4. Demandes à la DSI
 
-1. **Héberger le relais en interne** : soit **n8n auto-hébergé** sur l'infra de la collectivité, soit un **flux Power Automate** (si Microsoft 365 est déjà en place). *Un workflow prêt à l'emploi est fourni (fichiers `.json` + guide).*
-2. **Autoriser le webhook côté Grist** : variable serveur **`ALLOWED_WEBHOOK_DOMAINS`** = le **domaine interne du relais** (ex. `n8n.intra.grandlyon.fr`). *(Aucune adresse externe.)*
-3. **Donner accès au SMTP/Exchange interne** pour l'envoi, idéalement via un **compte d'envoi dédié** (ex. `notifications-projets@grandlyon.fr`).
+1. **Héberger le relais en interne** : soit **n8n auto-hébergé** sur l'infra de l'organisation, soit un **flux Power Automate** (si Microsoft 365 est déjà en place). *Un workflow prêt à l'emploi est fourni (fichiers `.json` + guide).*
+2. **Autoriser le webhook côté Grist** : variable serveur **`ALLOWED_WEBHOOK_DOMAINS`** = le **domaine interne du relais** (ex. `n8n.intra.votre-domaine`). *(Aucune adresse externe.)*
+3. **Donner accès au SMTP/Exchange interne** pour l'envoi, idéalement via un **compte d'envoi dédié** (ex. `notifications-projets@votre-domaine`).
 4. **Flux réseau** : autoriser le flux **Grist → relais** (interne à interne).
 
 ## 5. Garanties sécurité / RGPD
@@ -50,7 +50,7 @@ Pas de pièce jointe, pas de contenu sensible, pas de donnée nominative au-del�
 - **Webhook restreint** : limité à la table dédiée `PM_Notifications`, événement `Add` uniquement.
 - **Authentification du webhook** possible : ajout d'un **en-tête de sécurité** (secret partagé) vérifié par le relais, pour éviter tout appel non autorisé.
 - **Traçabilité** : les exécutions/journaux du relais restent sous contrôle DSI.
-- **Minimisation** : seuls les champs strictement nécessaires (cf. §3) sont transmis.
+- **Minimisation** : seuls les champs strictement nécessaires (cf. §3) sont transmis (e-mail professionnel uniquement).
 
 ## 6. Effort / réutilisable
 
