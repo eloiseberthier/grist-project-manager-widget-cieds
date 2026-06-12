@@ -1,0 +1,58 @@
+{
+  "name": "Grist PM — Notifications par e-mail (Outlook / Microsoft 365)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "grist-pm-notifications",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-grist",
+      "name": "Webhook Grist (PM_Notifications)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "grist-pm-notifications"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nlet rows = input.body !== undefined ? input.body : input;\nif (!Array.isArray(rows)) rows = [rows];\nreturn rows.map(r => ({ json: r }));"
+      },
+      "id": "normalize",
+      "name": "Normaliser les lignes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "subject": "=Tâche — {{ $json.Type }}",
+        "bodyContent": "=Bonjour,\n\n{{ $json.Message }}\n\n— Notification automatique (Gestion de projet Grist)",
+        "toRecipients": "={{ $json.User_Email }}",
+        "additionalFields": {
+          "bodyContentType": "Text"
+        }
+      },
+      "id": "send-outlook",
+      "name": "Envoyer l'e-mail (Outlook)",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Grist (PM_Notifications)": {
+      "main": [[{ "node": "Normaliser les lignes", "type": "main", "index": 0 }]]
+    },
+    "Normaliser les lignes": {
+      "main": [[{ "node": "Envoyer l'e-mail (Outlook)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "meta": {
+    "description": "Variante Outlook / Microsoft 365. Après import : ouvrir le nœud « Envoyer l'e-mail (Outlook) » → créer/associer un identifiant Microsoft Outlook OAuth2. Activer le workflow, copier l'URL de production du Webhook, la coller dans le webhook Grist sur la table PM_Notifications (événement Add)."
+  }
+}

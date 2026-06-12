@@ -4422,7 +4422,13 @@
             <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 16px;margin-top:14px;font-size:13px;line-height:1.6;color:#334155;">
               <div style="font-weight:800;color:#3730a3;margin-bottom:8px;">📧 Recevoir un e-mail à chaque notification (webhook Grist → n8n)</div>
               <p style="margin-bottom:8px;">Le widget enregistre une ligne dans la table <strong>PM_Notifications</strong> pour chaque personne concernée par une tâche (création ou modification). Un <strong>webhook Grist</strong> posé sur cette table peut transformer chaque notification en <strong>e-mail</strong>, via <strong>n8n</strong> (gratuit / auto-hébergeable).</p>
-              <p style="margin-bottom:10px;padding:8px 12px;background:#dcfce7;border:1px solid #86efac;border-radius:8px;">⬇️ <strong>Le plus simple :</strong> téléchargez le workflow prêt à l'emploi et importez-le dans n8n (<em>Menu → Import from File</em>) : <a href="n8n-grist-pm-email.json" download style="font-weight:700;color:#15803d;">Télécharger le workflow n8n (.json)</a></p>
+              <div style="margin-bottom:10px;padding:8px 12px;background:#dcfce7;border:1px solid #86efac;border-radius:8px;">⬇️ <strong>Le plus simple :</strong> téléchargez un workflow prêt à l'emploi et importez-le dans n8n (<em>Menu → Import from File</em>), selon votre messagerie :
+                <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;">
+                  <a href="n8n-grist-pm-email-gmail.json" download style="font-weight:700;color:#15803d;">📧 Gmail</a>
+                  <a href="n8n-grist-pm-email-outlook.json" download style="font-weight:700;color:#15803d;">📧 Outlook / Microsoft 365</a>
+                  <a href="n8n-grist-pm-email.json" download style="font-weight:700;color:#15803d;">📧 SMTP (Zimbra &amp; autres)</a>
+                </div>
+              </div>
               <ol style="margin:0 0 8px 20px;padding:0;">
                 <li><strong>Importez</strong> le fichier ci-dessus dans n8n (Webhook + normalisation + envoi d'e-mail déjà branchés et mappés sur <code>User_Email</code>, <code>Type</code>, <code>Message</code>).</li>
                 <li>Ouvrez le nœud <strong>« Envoyer l'e-mail (SMTP) »</strong> : associez vos <strong>identifiants SMTP</strong> et votre <em>adresse expéditeur</em>.</li>
@@ -4651,7 +4657,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=125"></script>
+  <script src="widget.js?v=126"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
