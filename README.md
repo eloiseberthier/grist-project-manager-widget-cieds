@@ -145,8 +145,14 @@ grist-project-manager-widget/
 
 ---
 
+## 🔔 Notifications & e-mails
+
+Notifications dans l'app (automatiques) + e-mail optionnel quand un utilisateur est concerné par l'ajout/modification d'une tâche → **guide complet : [EMAIL-NOTIFICATIONS.md](EMAIL-NOTIFICATIONS.md)**
+(webhook Grist → n8n ou Power Automate ; workflows prêts à l'emploi pour Gmail / Outlook / Zimbra-SMTP, valable auto-hébergé et grist.com).
+
 ## 🔗 Resources / Ressources
 
+- [Notifications & e-mails (guide)](EMAIL-NOTIFICATIONS.md) · [Guide Power Automate](POWER-AUTOMATE-GUIDE.md)
 - [Grist Custom Widgets Documentation](https://support.getgrist.com/widget-custom/)
 - [Grist Plugin API](https://support.getgrist.com/code/modules/grist_plugin_api/)
 - [GristUp Widget Marketplace](https://www.gristup.fr)
