@@ -798,6 +798,7 @@ async function saveCardDisplaySettings() {
 
 var raciEnabled = false;
 var automationRules = [];
+var notifyConcernedEnabled = true; // notifier les utilisateurs concernés à la création/modification
 var pmNotifications = [];
 
 // PM_Settings helpers
@@ -827,6 +828,9 @@ async function loadSettings() {
     }
     if (_settingsCache.automation_rules) {
       try { automationRules = JSON.parse(_settingsCache.automation_rules.value); } catch (e2) { automationRules = []; }
+    }
+    if (_settingsCache.notify_concerned) {
+      notifyConcernedEnabled = _settingsCache.notify_concerned.value !== 'false';
     }
   } catch (e) {
     console.log('[GristPM] PM_Settings not available yet');
@@ -7491,6 +7495,11 @@ async function createTask() {
     var newTaskId = (createResult && createResult.retValues && createResult.retValues[0]) || null;
     showToast(t('taskCreated'), 'success');
     logActivity('task_created', newTaskId, title, '');
+    if (newTaskId) {
+      var concernedNew = editAssignees.slice();
+      if (raciEnabled) concernedNew = concernedNew.concat(editAccountable, editConsulted, editInformed);
+      await notifyConcernedUsers(newTaskId, concernedNew, 'task_created', title);
+    }
     closeModalForce();
     await loadAllData();
     if (newTaskId) {
@@ -7577,6 +7586,11 @@ async function updateTask(taskId) {
       await evaluateAutomationRules(Object.assign({}, task, record, { id: taskId }), autoChanges);
     }
     logActivity(autoChanges.status ? 'status_changed' : 'task_updated', taskId, title, logDetails.join(', '));
+
+    // Notification intégrée des utilisateurs concernés (R/A/C/I) à la modification
+    var concernedUpd = editAssignees.slice();
+    if (raciEnabled) concernedUpd = concernedUpd.concat(editAccountable, editConsulted, editInformed);
+    await notifyConcernedUsers(taskId, concernedUpd, 'task_updated', title);
 
     // Create next occurrence if task is recurring and just completed
     if (newStatus === 'done' && wasNotDone && newRecurrence && newRecurrence !== 'none') {
@@ -8479,6 +8493,7 @@ function renderSettingsView() {
   renderKanbanStatusesList();
   renderRaciToggle();
   renderAutomationsSection();
+  renderNotifyConcernedToggle();
   renderSecuritySection();
 }
 
@@ -8905,6 +8920,24 @@ async function toggleRaci(enabled) {
   await saveSetting('raci_enabled', enabled ? 'true' : 'false');
   renderRaciToggle();
   showToast(t(enabled ? 'raciEnabled' : 'raciDisabled'), 'success');
+}
+
+function renderNotifyConcernedToggle() {
+  var container = document.getElementById('notify-concerned-toggle');
+  if (!container) return;
+  var L = currentLang === 'fr';
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">';
+  html += '<div><span style="font-size:13px;font-weight:600;">' + (L ? 'Notifier les utilisateurs concernés' : 'Notify concerned users') + '</span>';
+  html += '<p style="font-size:12px;color:#94a3b8;margin:2px 0 0;">' + (L ? 'À la création et à la modification d\'une tâche (R/A/C/I), une notification est créée pour chaque personne concernée.' : 'On task creation and update, a notification is created for each concerned person (R/A/C/I).') + '</p></div>';
+  html += '<label class="toggle-switch"><input type="checkbox" ' + (notifyConcernedEnabled ? 'checked' : '') + ' onchange="toggleNotifyConcerned(this.checked)"><span class="toggle-slider"></span></label>';
+  html += '</div>';
+  container.innerHTML = html;
+}
+async function toggleNotifyConcerned(enabled) {
+  notifyConcernedEnabled = enabled;
+  await saveSetting('notify_concerned', enabled ? 'true' : 'false');
+  renderNotifyConcernedToggle();
+  showToast(currentLang === 'fr' ? (enabled ? 'Notifications activées' : 'Notifications désactivées') : (enabled ? 'Notifications enabled' : 'Notifications disabled'), 'success');
 }
 
 // --- Automations Settings UI ---
@@ -9892,6 +9925,29 @@ async function createNotification(taskId, userEmail, type, message, ruleId) {
   } catch (e) {
     console.error('[GristPM] Error creating notification:', e);
   }
+}
+
+// Notification intégrée : à la création/modification d'une tâche, prévient chaque
+// utilisateur concerné (R/A/C/I). Une ligne PM_Notifications par destinataire → un webhook
+// Grist posé sur PM_Notifications peut la transformer en e-mail (voir onglet Paramètres).
+async function notifyConcernedUsers(taskId, emails, eventType, title) {
+  if (!notifyConcernedEnabled) return;
+  var me = (currentUserEmail || '').toLowerCase().trim();
+  var seen = {}, recipients = [];
+  (emails || []).forEach(function(e) {
+    var v = String(e || '').trim();
+    var k = v.toLowerCase();
+    if (v && k !== me && !seen[k]) { seen[k] = 1; recipients.push(v); }
+  });
+  if (!recipients.length) return;
+  var msg = (eventType === 'task_created')
+    ? (currentLang === 'fr' ? 'Nouvelle tâche vous concernant : ' : 'New task involving you: ') + title
+    : (currentLang === 'fr' ? 'Tâche modifiée : ' : 'Task updated: ') + title;
+  var now = Math.floor(Date.now() / 1000);
+  var actions = recipients.map(function(email) {
+    return ['AddRecord', NOTIFICATIONS_TABLE, null, { Task_Id: taskId, User_Email: email, Type: eventType, Message: msg, Is_Read: false, Created_At: now, Rule_Id: 'builtin' }];
+  });
+  try { await grist.docApi.applyUserActions(actions); } catch (e) { console.error('[GristPM] notifyConcernedUsers', e); }
 }
 
 function resolveRecipients(action, actionTarget, task) {
