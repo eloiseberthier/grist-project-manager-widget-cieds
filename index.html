@@ -4429,8 +4429,10 @@
                   <a href="n8n-grist-pm-email.json" download style="font-weight:700;color:#15803d;">📧 SMTP (Zimbra &amp; autres)</a>
                 </div>
               </div>
+              <p style="margin-bottom:10px;padding:8px 12px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;">🏢 <strong>Pas de n8n ?</strong> Si votre organisation est sur <strong>Microsoft 365</strong>, suivez plutôt le guide <a href="POWER-AUTOMATE-GUIDE.md" target="_blank" rel="noopener" style="font-weight:700;color:#a16207;">Power Automate (pas-à-pas) ↗</a> — pas d'outil à installer.</p>
+              <p style="font-weight:700;margin-bottom:4px;">Comment utiliser le fichier .json dans n8n :</p>
               <ol style="margin:0 0 8px 20px;padding:0;">
-                <li><strong>Importez</strong> le fichier ci-dessus dans n8n (Webhook + normalisation + envoi d'e-mail déjà branchés et mappés sur <code>User_Email</code>, <code>Type</code>, <code>Message</code>).</li>
+                <li><strong>Importez</strong> le fichier : dans n8n, menu <strong>⋮ (en haut à droite)</strong> → <strong>Import from File</strong> → sélectionnez le .json téléchargé. Le Webhook, la normalisation et l'envoi d'e-mail apparaissent, déjà reliés et mappés sur <code>User_Email</code>, <code>Type</code>, <code>Message</code>.</li>
                 <li>Ouvrez le nœud <strong>« Envoyer l'e-mail (SMTP) »</strong> : associez vos <strong>identifiants SMTP</strong> et votre <em>adresse expéditeur</em>.</li>
                 <li><strong>Activez</strong> le workflow, puis copiez l'<em>URL de production</em> du nœud Webhook.</li>
                 <li><strong>Dans Grist</strong> : ouvre le document → menu <strong>⚙️ Paramètres du document</strong> → section <strong>Webhooks</strong> → <strong>Ajouter un webhook</strong> :
@@ -4657,7 +4659,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=126"></script>
+  <script src="widget.js?v=127"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>
