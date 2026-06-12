@@ -4421,19 +4421,12 @@
             <div id="notify-concerned-toggle"></div>
             <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px 16px;margin-top:14px;font-size:13px;line-height:1.6;color:#334155;">
               <div style="font-weight:800;color:#3730a3;margin-bottom:8px;">📧 Recevoir un e-mail à chaque notification (webhook Grist → n8n)</div>
-              <p style="margin-bottom:8px;">Le widget enregistre une ligne dans la table <strong>PM_Notifications</strong> pour chaque personne concernée par une tâche (création ou modification). Un <strong>webhook Grist</strong> posé sur cette table peut transformer chaque notification en <strong>e-mail</strong>, via <strong>n8n</strong> (gratuit / auto-hébergeable). Étapes :</p>
+              <p style="margin-bottom:8px;">Le widget enregistre une ligne dans la table <strong>PM_Notifications</strong> pour chaque personne concernée par une tâche (création ou modification). Un <strong>webhook Grist</strong> posé sur cette table peut transformer chaque notification en <strong>e-mail</strong>, via <strong>n8n</strong> (gratuit / auto-hébergeable).</p>
+              <p style="margin-bottom:10px;padding:8px 12px;background:#dcfce7;border:1px solid #86efac;border-radius:8px;">⬇️ <strong>Le plus simple :</strong> téléchargez le workflow prêt à l'emploi et importez-le dans n8n (<em>Menu → Import from File</em>) : <a href="n8n-grist-pm-email.json" download style="font-weight:700;color:#15803d;">Télécharger le workflow n8n (.json)</a></p>
               <ol style="margin:0 0 8px 20px;padding:0;">
-                <li><strong>Dans n8n</strong> : crée un workflow avec un nœud <strong>Webhook</strong> (méthode <em>POST</em>) et copie son <em>URL de production</em>.</li>
-                <li>Ajoute un nœud <strong>Send Email</strong> (SMTP) — ou <em>Gmail / Microsoft Outlook</em> — avec tes identifiants d'envoi.</li>
-                <li>Renseigne les champs depuis les données reçues :
-                  <ul style="margin:4px 0 4px 18px;">
-                    <li>Destinataire : <code>{{ $json.body.User_Email }}</code></li>
-                    <li>Sujet : <code>Tâche – {{ $json.body.Type }}</code></li>
-                    <li>Message : <code>{{ $json.body.Message }}</code></li>
-                  </ul>
-                  <span style="color:#64748b;">(le chemin exact peut être <code>$json.body[0]...</code> selon le format ; inspecte l'exécution n8n pour ajuster.)</span>
-                </li>
-                <li><strong>Active</strong> le workflow n8n.</li>
+                <li><strong>Importez</strong> le fichier ci-dessus dans n8n (Webhook + normalisation + envoi d'e-mail déjà branchés et mappés sur <code>User_Email</code>, <code>Type</code>, <code>Message</code>).</li>
+                <li>Ouvrez le nœud <strong>« Envoyer l'e-mail (SMTP) »</strong> : associez vos <strong>identifiants SMTP</strong> et votre <em>adresse expéditeur</em>.</li>
+                <li><strong>Activez</strong> le workflow, puis copiez l'<em>URL de production</em> du nœud Webhook.</li>
                 <li><strong>Dans Grist</strong> : ouvre le document → menu <strong>⚙️ Paramètres du document</strong> → section <strong>Webhooks</strong> → <strong>Ajouter un webhook</strong> :
                   <ul style="margin:4px 0 4px 18px;">
                     <li>Table : <strong>PM_Notifications</strong></li>
@@ -4658,7 +4651,7 @@
     </div>
   </div>
 
-  <script src="widget.js?v=124"></script>
+  <script src="widget.js?v=125"></script>
   <footer style="position: fixed; bottom: 0; left: 0; right: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 12px; font-size: 0.7em; color: #94a3b8; display: flex; justify-content: space-between; z-index: 1000;">
     <span>© 2026 isaytoo</span>
     <a href="https://gristup.fr" target="_blank" style="color: #3b82f6; text-decoration: none;">gristup.fr</a>

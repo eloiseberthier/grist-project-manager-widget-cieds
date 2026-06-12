@@ -1,0 +1,57 @@
+{
+  "name": "Grist PM — Notifications par e-mail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "grist-pm-notifications",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-grist",
+      "name": "Webhook Grist (PM_Notifications)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "grist-pm-notifications"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Grist envoie un tableau d'enregistrements (les lignes ajoutées dans PM_Notifications).\n// On gère les deux formats possibles (tableau direct ou sous .body) et on sort 1 item / notification.\nconst input = $input.first().json;\nlet rows = input.body !== undefined ? input.body : input;\nif (!Array.isArray(rows)) rows = [rows];\nreturn rows.map(r => ({ json: r }));"
+      },
+      "id": "normalize",
+      "name": "Normaliser les lignes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "no-reply@VOTRE-DOMAINE.fr",
+        "toEmail": "={{ $json.User_Email }}",
+        "subject": "=Tâche — {{ $json.Type }}",
+        "emailFormat": "text",
+        "text": "=Bonjour,\n\n{{ $json.Message }}\n\n— Notification automatique (Gestion de projet Grist)",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Envoyer l'e-mail (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Grist (PM_Notifications)": {
+      "main": [[{ "node": "Normaliser les lignes", "type": "main", "index": 0 }]]
+    },
+    "Normaliser les lignes": {
+      "main": [[{ "node": "Envoyer l'e-mail (SMTP)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "meta": {
+    "templatecredsSetupCompleted": false,
+    "description": "À importer dans n8n (Menu → Import from File). 3 étapes ensuite : 1) ouvrir le nœud « Envoyer l'e-mail (SMTP) » et y associer vos identifiants SMTP + l'adresse expéditeur ; 2) Activer le workflow ; 3) copier l'URL de production du nœud Webhook et la coller dans le webhook Grist posé sur la table PM_Notifications (événement Add)."
+  }
+}
