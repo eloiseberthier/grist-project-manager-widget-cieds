@@ -741,6 +741,7 @@ var currentFilterRole = null;
 var currentFilterAssignee = null; // user Name
 var currentFilterCategory = null;
 var currentFilterTag = null;
+var mineOnly = false; // "Mes projets" : projets créés par moi OU où je suis assigné
 var activeTimers = {}; // taskId -> startTime (for running timers)
 var kanbanGroupBy = 'status'; // 'status' | 'priority' | 'project'
 var kanbanSort = 'manual'; // 'manual' | 'alpha' | 'alpha-desc' | 'due'
@@ -1892,7 +1893,9 @@ async function ensureTables() {
           { id: 'Color', type: 'Text' },
           { id: 'Status', type: 'Choice', widgetOptions: JSON.stringify({ choices: ['active', 'archived', 'completed'] }) },
           { id: 'Start_Date', type: 'Date' },
-          { id: 'End_Date', type: 'Date' }
+          { id: 'End_Date', type: 'Date' },
+          { id: 'CreatedBy', type: 'Text' },
+          { id: 'CreatedAt', type: 'Text' }
         ]]
       ]);
     }
@@ -1909,6 +1912,17 @@ async function ensureTables() {
       }
     } catch (e) {
       console.log('[GristPM] Migration Project_Id ignorée :', e.message);
+    }
+
+    // Migration CreatedBy / CreatedAt sur PM_Projects (créateur du projet)
+    try {
+      var projCols = Object.keys(await grist.docApi.fetchTable(PROJECTS_TABLE));
+      var projMig = [];
+      if (projCols.indexOf('CreatedBy') === -1) projMig.push(['AddColumn', PROJECTS_TABLE, 'CreatedBy', { type: 'Text' }]);
+      if (projCols.indexOf('CreatedAt') === -1) projMig.push(['AddColumn', PROJECTS_TABLE, 'CreatedAt', { type: 'Text' }]);
+      if (projMig.length) { await grist.docApi.applyUserActions(projMig); console.log('[GristPM] CreatedBy/CreatedAt ajoutés à PM_Projects'); }
+    } catch (e) {
+      console.log('[GristPM] Migration CreatedBy ignorée :', e.message);
     }
 
     // Create PM_Config table for column mapping configuration
@@ -2428,7 +2442,9 @@ async function loadAllData() {
           Color: projData[colorCol] ? projData[colorCol][i] : '#6366f1',
           Status: projData[statusCol] ? projData[statusCol][i] : 'active',
           Start_Date: projData.Start_Date ? projData.Start_Date[i] : null,
-          End_Date: projData.End_Date ? projData.End_Date[i] : null
+          End_Date: projData.End_Date ? projData.End_Date[i] : null,
+          CreatedBy: projData.CreatedBy ? projData.CreatedBy[i] : '',
+          CreatedAt: projData.CreatedAt ? projData.CreatedAt[i] : ''
         });
       }
     }
@@ -2502,8 +2518,12 @@ function renderProjectSelector() {
     ? users.filter(function(u) { return userMatchesRole(u, currentFilterRole); })
     : users;
 
-  // Projets visibles : si un assigné est choisi, uniquement ceux où il a des tâches
+  // Projets visibles
   var visibleProjects = projects;
+  if (mineOnly) {
+    var myIds = myProjectIdSet();
+    visibleProjects = projects.filter(function (p) { return myIds[p.id]; });
+  }
   if (currentFilterAssignee) {
     var projIdSet = {};
     tasks.forEach(function(t) {
@@ -2511,8 +2531,8 @@ function renderProjectSelector() {
       var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); });
       if (list.indexOf(currentFilterAssignee) !== -1) projIdSet[t.Project_Id] = true;
     });
-    // Si aucune tâche associée, on laisse tous les projets (sinon UX bloquée)
-    var filtered = projects.filter(function(p) { return projIdSet[p.id]; });
+    // Si aucune tâche associée, on laisse les projets courants (sinon UX bloquée)
+    var filtered = visibleProjects.filter(function(p) { return projIdSet[p.id]; });
     if (filtered.length > 0) visibleProjects = filtered;
   }
 
@@ -2587,14 +2607,12 @@ function renderProjectSelector() {
   }
   html += '</div></div></div>';
 
-  // Bouton "Mes projets" (filtre sur l'utilisateur courant)
-  var mineVal = myAssigneeValue();
-  if (mineVal) {
-    var mineOn = currentFilterAssignee === mineVal;
-    html += '<button class="btn-icon" onclick="toggleMyProjects()" title="' + (currentLang === 'fr' ? 'Afficher seulement mes projets' : 'Show only my projects') + '" style="width:auto;padding:0 12px;font-size:12px;font-weight:600;' + (mineOn ? 'background:#6366f1;color:#fff;border-color:#6366f1;' : '') + '">👤 ' + (currentLang === 'fr' ? 'Mes projets' : 'My projects') + '</button>';
+  // Bouton "Mes projets" (créés par moi OU assigné à moi)
+  if (currentUserEmail) {
+    html += '<button class="btn-icon" onclick="toggleMyProjects()" title="' + (currentLang === 'fr' ? 'Mes projets : créés par moi ou qui me sont assignés' : 'My projects: created by or assigned to me') + '" style="width:auto;padding:0 12px;font-size:12px;font-weight:600;' + (mineOnly ? 'background:#6366f1;color:#fff;border-color:#6366f1;' : '') + '">👤 ' + (currentLang === 'fr' ? 'Mes projets' : 'My projects') + '</button>';
   }
 
-  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId) {
+  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId || mineOnly) {
     html += '<button class="btn-icon" onclick="resetFilters()" title="' + (currentLang === 'fr' ? 'Réinitialiser les filtres' : 'Reset filters') + '" style="color:#ef4444;">✕</button>';
   }
 
@@ -2609,10 +2627,11 @@ function renderProjectSelector() {
     var appEl = document.querySelector('.app-container') || document.body;
     appEl.insertBefore(banner, appEl.firstChild);
   }
-  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId) {
+  if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId || mineOnly) {
     var proj2 = currentProjectId ? projects.find(function(p) { return p.id === currentProjectId; }) : null;
     var c2 = (proj2 && proj2.Color) ? proj2.Color : '#6366f1';
     var bits = [];
+    if (mineOnly) bits.push('👤 ' + (currentLang === 'fr' ? 'Mes projets' : 'My projects'));
     if (currentFilterRole) bits.push('👔 ' + sanitize(roleLabel(currentFilterRole)));
     if (currentFilterAssignee) {
       var u = users.find(function(x) { return (x.Email || x.Name) === currentFilterAssignee; });
@@ -2863,11 +2882,25 @@ function myAssigneeValue() {
   if (u) return u.Email || u.Name;
   return currentUserEmail; // repli : on tente l'email brut
 }
+// Ensemble des projets "à moi" : créés par moi OU contenant une tâche qui m'est assignée
+function myProjectIdSet() {
+  var em = (currentUserEmail || '').toLowerCase().trim();
+  var mine = myAssigneeValue();
+  var set = {};
+  projects.forEach(function (p) { if (em && (p.CreatedBy || '').toLowerCase().trim() === em) set[p.id] = true; });
+  if (mine) tasks.forEach(function (tk) {
+    if (!tk.Project_Id) return;
+    var list = (tk.Assignee || '').split(',').map(function (s) { return s.trim(); });
+    if (list.indexOf(mine) !== -1) set[tk.Project_Id] = true;
+  });
+  return set;
+}
 // Bascule "Afficher seulement mes projets"
 function toggleMyProjects() {
-  var mine = myAssigneeValue();
-  if (!mine) return;
-  filterByAssignee(currentFilterAssignee === mine ? null : mine);
+  mineOnly = !mineOnly;
+  persistFilters();
+  renderProjectSelector();
+  refreshAllViews();
 }
 
 // Persistance des filtres (conservés en changeant de page / au rechargement)
@@ -2875,7 +2908,7 @@ function persistFilters() {
   try {
     localStorage.setItem('pm-filters', JSON.stringify({
       role: currentFilterRole, assignee: currentFilterAssignee,
-      category: currentFilterCategory, tag: currentFilterTag
+      category: currentFilterCategory, tag: currentFilterTag, mineOnly: mineOnly
     }));
   } catch (e) {}
 }
@@ -2886,6 +2919,7 @@ function restoreFilters() {
     currentFilterAssignee = s.assignee || null;
     currentFilterCategory = s.category || null;
     currentFilterTag = s.tag || null;
+    mineOnly = !!s.mineOnly;
   } catch (e) {}
 }
 
@@ -2942,6 +2976,7 @@ function resetFilters() {
   currentFilterAssignee = null;
   currentFilterCategory = null;
   currentFilterTag = null;
+  mineOnly = false;
   currentProjectId = null;
   localStorage.setItem('pm-current-project', '');
   persistFilters();
@@ -2977,6 +3012,10 @@ function getFilteredTasks() {
   }
   if (currentFilterTag) {
     result = result.filter(function(t) { return t.Tag === currentFilterTag; });
+  }
+  if (mineOnly && !currentProjectId) {
+    var myIds = myProjectIdSet();
+    result = result.filter(function(t) { return t.Project_Id && myIds[t.Project_Id]; });
   }
   if (currentProjectId) {
     var cpid = Number(currentProjectId);
@@ -8430,7 +8469,9 @@ function renderProjectList() {
     html += '<div class="project-item" style="border-left: 4px solid ' + (proj.Color || '#6366f1') + ';">';
     html += '<div class="project-item-info">';
     html += '<strong>' + sanitize(proj.Name) + '</strong>';
-    html += '<span class="project-item-meta">' + taskCount + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks') + '</span>';
+    var metaTxt = taskCount + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks');
+    if (proj.CreatedBy) metaTxt += ' · ' + (currentLang === 'fr' ? 'créé par ' : 'created by ') + sanitize(getUserDisplayName(proj.CreatedBy));
+    html += '<span class="project-item-meta">' + metaTxt + '</span>';
     html += '</div>';
     html += '<div class="project-item-actions">';
     html += '<button class="btn-icon" onclick="editProject(' + proj.id + ')" title="' + t('editProject') + '">✏️</button>';
@@ -8489,6 +8530,11 @@ async function saveProject() {
       ]);
       showToast(t('editProject') + ' ✓', 'success');
     } else {
+      // Créateur du projet (auteur) — uniquement sur la table par défaut qui possède ces colonnes
+      if (PROJECTS_TABLE === DEFAULT_PROJECTS_TABLE) {
+        record.CreatedBy = currentUserEmail || '';
+        record.CreatedAt = new Date().toISOString();
+      }
       await grist.docApi.applyUserActions([
         ['AddRecord', PROJECTS_TABLE, null, record]
       ]);
