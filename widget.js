@@ -2587,6 +2587,13 @@ function renderProjectSelector() {
   }
   html += '</div></div></div>';
 
+  // Bouton "Mes projets" (filtre sur l'utilisateur courant)
+  var mineVal = myAssigneeValue();
+  if (mineVal) {
+    var mineOn = currentFilterAssignee === mineVal;
+    html += '<button class="btn-icon" onclick="toggleMyProjects()" title="' + (currentLang === 'fr' ? 'Afficher seulement mes projets' : 'Show only my projects') + '" style="width:auto;padding:0 12px;font-size:12px;font-weight:600;' + (mineOn ? 'background:#6366f1;color:#fff;border-color:#6366f1;' : '') + '">👤 ' + (currentLang === 'fr' ? 'Mes projets' : 'My projects') + '</button>';
+  }
+
   if (currentFilterRole || currentFilterAssignee || currentFilterCategory || currentFilterTag || currentProjectId) {
     html += '<button class="btn-icon" onclick="resetFilters()" title="' + (currentLang === 'fr' ? 'Réinitialiser les filtres' : 'Reset filters') + '" style="color:#ef4444;">✕</button>';
   }
@@ -2848,6 +2855,40 @@ function filterByProject(projectId) {
   refreshAllViews();
 }
 
+// Valeur d'assigné correspondant à l'utilisateur courant (Email en priorité, sinon Nom)
+function myAssigneeValue() {
+  if (!currentUserEmail) return null;
+  var em = currentUserEmail.toLowerCase().trim();
+  var u = users.find(function (x) { return (x.Email || '').toLowerCase().trim() === em; });
+  if (u) return u.Email || u.Name;
+  return currentUserEmail; // repli : on tente l'email brut
+}
+// Bascule "Afficher seulement mes projets"
+function toggleMyProjects() {
+  var mine = myAssigneeValue();
+  if (!mine) return;
+  filterByAssignee(currentFilterAssignee === mine ? null : mine);
+}
+
+// Persistance des filtres (conservés en changeant de page / au rechargement)
+function persistFilters() {
+  try {
+    localStorage.setItem('pm-filters', JSON.stringify({
+      role: currentFilterRole, assignee: currentFilterAssignee,
+      category: currentFilterCategory, tag: currentFilterTag
+    }));
+  } catch (e) {}
+}
+function restoreFilters() {
+  try {
+    var s = JSON.parse(localStorage.getItem('pm-filters') || '{}');
+    currentFilterRole = s.role || null;
+    currentFilterAssignee = s.assignee || null;
+    currentFilterCategory = s.category || null;
+    currentFilterTag = s.tag || null;
+  } catch (e) {}
+}
+
 function filterByRole(role) {
   currentFilterRole = role || null;
   // Si la personne sélectionnée n'a plus le rôle, la déselectionner
@@ -2861,6 +2902,7 @@ function filterByRole(role) {
       currentProjectId = null;
     }
   }
+  persistFilters();
   renderProjectSelector();
   refreshAllViews();
 }
@@ -2876,18 +2918,21 @@ function filterByAssignee(name) {
     });
     if (!match) currentProjectId = null;
   }
+  persistFilters();
   renderProjectSelector();
   refreshAllViews();
 }
 
 function filterByCategory(val) {
   currentFilterCategory = val || null;
+  persistFilters();
   renderProjectSelector();
   refreshAllViews();
 }
 
 function filterByTag(val) {
   currentFilterTag = val || null;
+  persistFilters();
   renderProjectSelector();
   refreshAllViews();
 }
@@ -2899,6 +2944,7 @@ function resetFilters() {
   currentFilterTag = null;
   currentProjectId = null;
   localStorage.setItem('pm-current-project', '');
+  persistFilters();
   renderProjectSelector();
   refreshAllViews();
 }
@@ -10272,6 +10318,8 @@ if (!isInsideGrist()) {
     await checkTimeBasedAutomations();
     await cleanupOldNotifications();
     updateNotificationBadge();
+    restoreFilters(); // conserver les filtres en changeant de page / au rechargement
+    try { var _sp = localStorage.getItem('pm-current-project'); if (_sp) currentProjectId = parseInt(_sp) || null; } catch (e) {}
     restoreActiveTab();
     // Synchronise les choix de la colonne Status des sous-tâches avec les statuts personnalisés
     if (isOwner) syncSubtaskStatusChoices();
