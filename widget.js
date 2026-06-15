@@ -1762,6 +1762,9 @@ async function ensureTables() {
           { id: 'Priority', type: 'Choice', widgetOptions: JSON.stringify({ choices: ['high', 'medium', 'low'] }) },
           { id: 'Category', type: 'Text' },
           { id: 'Estimated_Hours', type: 'Numeric' },
+          { id: 'Group_Name', type: 'Text' },
+          { id: 'Tag', type: 'Text' },
+          { id: 'Recurrence', type: 'Text' },
           { id: 'Usage_Count', type: 'Int' },
           { id: 'Updated_At', type: 'Date' }
         ]]
@@ -1912,6 +1915,18 @@ async function ensureTables() {
       }
     } catch (e) {
       console.log('[GristPM] Migration Project_Id ignorée :', e.message);
+    }
+
+    // Migration Group_Name / Tag / Recurrence sur PM_Templates
+    try {
+      var tplCols = Object.keys(await grist.docApi.fetchTable(TEMPLATES_TABLE));
+      var tplMig = [];
+      if (tplCols.indexOf('Group_Name') === -1) tplMig.push(['AddColumn', TEMPLATES_TABLE, 'Group_Name', { type: 'Text' }]);
+      if (tplCols.indexOf('Tag') === -1) tplMig.push(['AddColumn', TEMPLATES_TABLE, 'Tag', { type: 'Text' }]);
+      if (tplCols.indexOf('Recurrence') === -1) tplMig.push(['AddColumn', TEMPLATES_TABLE, 'Recurrence', { type: 'Text' }]);
+      if (tplMig.length) { await grist.docApi.applyUserActions(tplMig); console.log('[GristPM] Colonnes templates enrichies'); }
+    } catch (e) {
+      console.log('[GristPM] Migration templates ignorée :', e.message);
     }
 
     // Migration CreatedBy / CreatedAt sur PM_Projects (créateur du projet)
@@ -2234,6 +2249,9 @@ async function loadAllData() {
           Priority: tplData.Priority ? tplData.Priority[i] : 'medium',
           Category: tplData.Category ? tplData.Category[i] : '',
           Estimated_Hours: tplData.Estimated_Hours ? tplData.Estimated_Hours[i] : 0,
+          Group_Name: tplData.Group_Name ? tplData.Group_Name[i] : '',
+          Tag: tplData.Tag ? tplData.Tag[i] : '',
+          Recurrence: tplData.Recurrence ? tplData.Recurrence[i] : 'none',
           Usage_Count: tplData.Usage_Count ? tplData.Usage_Count[i] : 0,
           Updated_At: tplData.Updated_At ? tplData.Updated_At[i] : null
         });
@@ -5997,12 +6015,19 @@ var draftTaskId = null; // id de la tâche brouillon en cours de création (appr
 
 // Crée une tâche brouillon immédiatement puis ouvre l'éditeur COMPLET.
 // À la fermeture : si un titre a été saisi -> enregistrée ; sinon -> brouillon supprimé.
-async function startNewTask(defaultStatus, dateStr) {
+async function startNewTask(defaultStatus, dateStr, prefill) {
+  prefill = prefill || {};
   var statuses = getKanbanStatuses();
   var record = {};
-  setField(record, 'tasks', 'title', '');
+  setField(record, 'tasks', 'title', prefill.title || '');
   setField(record, 'tasks', 'status', defaultStatus || (statuses[0] && statuses[0].key) || 'todo');
-  setField(record, 'tasks', 'priority', 'medium');
+  setField(record, 'tasks', 'priority', prefill.priority || 'medium');
+  if (prefill.description) setField(record, 'tasks', 'description', prefill.description);
+  if (prefill.category) setField(record, 'tasks', 'category', prefill.category);
+  if (prefill.group) setField(record, 'tasks', 'group', prefill.group);
+  if (prefill.tag) setField(record, 'tasks', 'tag', prefill.tag);
+  if (prefill.recurrence && prefill.recurrence !== 'none') setField(record, 'tasks', 'recurrence', prefill.recurrence);
+  if (prefill.estimatedHours) setField(record, 'tasks', 'estimatedHours', prefill.estimatedHours);
   if (currentProjectId) setField(record, 'tasks', 'projectId', currentProjectId);
   setField(record, 'tasks', 'createdAt', Math.floor(Date.now() / 1000));
   record.Auto_Extend = true;
@@ -7517,6 +7542,9 @@ function openNewTemplateModal(tplId) {
   var priority = editing ? (tpl.Priority || 'medium') : 'medium';
   var category = editing ? (tpl.Category || '') : '';
   var hours = editing ? (tpl.Estimated_Hours || '') : '';
+  var tplGroup = editing ? (tpl.Group_Name || '') : '';
+  var tplTag = editing ? (tpl.Tag || '') : '';
+  var tplRecur = editing ? (tpl.Recurrence || 'none') : 'none';
 
   var html = '<div class="modal-overlay" onclick="closeModal(event)">';
   html += '<div class="modal" onclick="event.stopPropagation()">';
@@ -7538,6 +7566,20 @@ function openNewTemplateModal(tplId) {
   html += '<div class="form-group"><label>' + t('fieldCategory') + '</label><select id="tpl-category">' + tplCatOptions + '</select></div>';
   html += '</div>';
   html += '<div class="form-group"><label>' + t('fieldEstimatedTime') + '</label><input type="number" id="tpl-hours" step="0.5" min="0" value="' + hours + '" /></div>';
+  // Groupe + Tag
+  html += '<div class="form-row">';
+  var tplGroupOpts = '<option value="">--</option>';
+  for (var tgi = 0; tgi < groups.length; tgi++) tplGroupOpts += '<option value="' + sanitize(groups[tgi].Name) + '"' + (groups[tgi].Name === tplGroup ? ' selected' : '') + '>' + sanitize(groups[tgi].Name) + '</option>';
+  html += '<div class="form-group"><label>' + t('fieldGroup') + '</label><select id="tpl-group">' + tplGroupOpts + '</select></div>';
+  var tplTagOpts = '<option value="">--</option>';
+  for (var tti = 0; tti < tags.length; tti++) tplTagOpts += '<option value="' + sanitize(tags[tti].Name) + '"' + (tags[tti].Name === tplTag ? ' selected' : '') + '>' + sanitize(tags[tti].Name) + '</option>';
+  html += '<div class="form-group"><label>' + t('tag') + '</label><select id="tpl-tag">' + tplTagOpts + '</select></div>';
+  html += '</div>';
+  // Récurrence
+  var recurKeys = ['none', 'daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'];
+  var recurLabels = { none: 'recurrenceNone', daily: 'recurrenceDaily', weekly: 'recurrenceWeekly', biweekly: 'recurrenceBiweekly', monthly: 'recurrenceMonthly', quarterly: 'recurrenceQuarterly', yearly: 'recurrenceYearly' };
+  var tplRecurOpts = recurKeys.map(function (k) { return '<option value="' + k + '"' + (tplRecur === k ? ' selected' : '') + '>' + t(recurLabels[k]) + '</option>'; }).join('');
+  html += '<div class="form-group"><label>🔁 ' + (currentLang === 'fr' ? 'Récurrence' : 'Recurrence') + '</label><select id="tpl-recurrence">' + tplRecurOpts + '</select></div>';
   html += '</div>';
   html += '<div class="modal-footer">';
   html += '<button class="btn btn-secondary" onclick="closeModalForce()">' + t('cancel') + '</button>';
@@ -7755,6 +7797,9 @@ async function createTemplate() {
     Priority: document.getElementById('tpl-priority').value,
     Category: document.getElementById('tpl-category').value.trim(),
     Estimated_Hours: parseFloat(document.getElementById('tpl-hours').value) || 0,
+    Group_Name: (document.getElementById('tpl-group') || {}).value || '',
+    Tag: (document.getElementById('tpl-tag') || {}).value || '',
+    Recurrence: (document.getElementById('tpl-recurrence') || {}).value || 'none',
     Usage_Count: 0,
     Updated_At: Math.floor(Date.now() / 1000)
   };
@@ -7781,6 +7826,9 @@ async function updateTemplate(tplId) {
     Priority: document.getElementById('tpl-priority').value,
     Category: document.getElementById('tpl-category').value.trim(),
     Estimated_Hours: parseFloat(document.getElementById('tpl-hours').value) || 0,
+    Group_Name: (document.getElementById('tpl-group') || {}).value || '',
+    Tag: (document.getElementById('tpl-tag') || {}).value || '',
+    Recurrence: (document.getElementById('tpl-recurrence') || {}).value || 'none',
     Updated_At: Math.floor(Date.now() / 1000)
   };
 
@@ -7823,19 +7871,17 @@ async function useTemplate(tplId) {
     ]);
   } catch (e) {}
 
-  // Open new task modal pre-filled with template data
-  openNewTaskModal('todo');
-  // Wait for DOM
-  setTimeout(function() {
-    var titleEl = document.getElementById('task-title');
-    var descEl = document.getElementById('task-desc');
-    var priorityEl = document.getElementById('task-priority');
-    var categoryEl = document.getElementById('task-category');
-    if (titleEl) titleEl.value = tpl.Title;
-    if (descEl) descEl.value = tpl.Description || '';
-    if (priorityEl) priorityEl.value = tpl.Priority || 'medium';
-    if (categoryEl) categoryEl.value = tpl.Category || '';
-  }, 50);
+  // Crée un brouillon pré-rempli depuis le modèle, puis ouvre l'éditeur COMPLET
+  startNewTask('todo', null, {
+    title: tpl.Title || '',
+    description: tpl.Description || '',
+    priority: tpl.Priority || 'medium',
+    category: tpl.Category || '',
+    group: tpl.Group_Name || '',
+    tag: tpl.Tag || '',
+    recurrence: tpl.Recurrence || 'none',
+    estimatedHours: tpl.Estimated_Hours || 0
+  });
 }
 
 // =============================================================================
