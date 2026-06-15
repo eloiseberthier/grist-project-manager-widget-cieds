@@ -3262,14 +3262,7 @@ async function onCalendarDrop(event, dateStr) {
 }
 
 function openNewTaskModalWithDate(dateStr) {
-  openNewTaskModal();
-  // Set the date after modal is rendered
-  setTimeout(function() {
-    var startInput = document.getElementById('task-start');
-    var dueInput = document.getElementById('task-due');
-    if (startInput) startInput.value = dateStr;
-    if (dueInput) dueInput.value = dateStr;
-  }, 50);
+  return startNewTask(null, dateStr); // brouillon avec date pré-remplie -> éditeur complet
 }
 
 function calendarNav(dir) {
@@ -5839,6 +5832,8 @@ async function deleteGroup(groupId) {
 // =============================================================================
 
 function openNewTaskModal(defaultStatus) {
+  return startNewTask(defaultStatus); // approche brouillon -> éditeur complet
+  // --- ancien formulaire de création (désactivé, conservé pour référence) ---
   editAssignees = [];
   editAccountable = [];
   editConsulted = [];
@@ -5998,6 +5993,29 @@ var editAssignees = [];
 var editAccountable = [];
 var editConsulted = [];
 var editInformed = [];
+var draftTaskId = null; // id de la tâche brouillon en cours de création (approche "créer puis éditer")
+
+// Crée une tâche brouillon immédiatement puis ouvre l'éditeur COMPLET.
+// À la fermeture : si un titre a été saisi -> enregistrée ; sinon -> brouillon supprimé.
+async function startNewTask(defaultStatus, dateStr) {
+  var statuses = getKanbanStatuses();
+  var record = {};
+  setField(record, 'tasks', 'title', '');
+  setField(record, 'tasks', 'status', defaultStatus || (statuses[0] && statuses[0].key) || 'todo');
+  setField(record, 'tasks', 'priority', 'medium');
+  if (currentProjectId) setField(record, 'tasks', 'projectId', currentProjectId);
+  setField(record, 'tasks', 'createdAt', Math.floor(Date.now() / 1000));
+  record.Auto_Extend = true;
+  if (dateStr) { setField(record, 'tasks', 'startDate', toEpoch(dateStr)); setField(record, 'tasks', 'dueDate', toEpoch(dateStr)); }
+  try {
+    var res = await grist.docApi.applyUserActions([['AddRecord', TASKS_TABLE, null, record]]);
+    var newId = (res && res.retValues && res.retValues[0]) || null;
+    if (!newId) { showToast('Error', 'error'); return; }
+    draftTaskId = newId;
+    await loadAllData();
+    openEditTaskModal(newId);
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
 
 function openEditTaskModal(taskId, preserveAssignees) {
   var task = tasks.find(function(t) { return t.id === taskId; });
@@ -7540,6 +7558,17 @@ function closeModal(e) {
 }
 
 function closeModalForce() {
+  // Gestion du brouillon de nouvelle tâche : titre saisi -> on enregistre ; sinon -> on supprime
+  if (draftTaskId != null) {
+    var did = draftTaskId; draftTaskId = null;
+    var ti = document.getElementById('task-title');
+    var titleVal = ti ? ti.value.trim() : '';
+    if (titleVal) { updateTask(did); return; } // updateTask enregistre, ferme et recharge
+    grist.docApi.applyUserActions([['RemoveRecord', TASKS_TABLE, did]])
+      .then(function () { return loadAllData(); })
+      .then(function () { refreshAllViews(); })
+      .catch(function () {});
+  }
   document.getElementById('modal-container').innerHTML = '';
 }
 
@@ -7606,6 +7635,7 @@ async function createTask() {
 async function updateTask(taskId) {
   var title = document.getElementById('task-title').value.trim();
   if (!title) return;
+  if (draftTaskId === taskId) draftTaskId = null; // ce brouillon devient une vraie tâche
 
   var task = tasks.find(function(t) { return t.id === taskId; });
   var wasNotDone = task && task.Status !== 'done';
