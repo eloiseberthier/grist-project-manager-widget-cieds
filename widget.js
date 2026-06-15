@@ -153,6 +153,7 @@ var i18n = {
     manageProjects: 'Gérer les projets',
     project: 'Projet',
     projectName: 'Nom du projet',
+    projectLead: 'Responsable',
     projectDescription: 'Description',
     projectColor: 'Couleur',
     projectStatus: 'Statut',
@@ -490,6 +491,7 @@ var i18n = {
     manageProjects: 'Manage projects',
     project: 'Project',
     projectName: 'Project name',
+    projectLead: 'Lead',
     projectDescription: 'Description',
     projectColor: 'Color',
     projectStatus: 'Status',
@@ -923,7 +925,8 @@ var columnMapping = {
     name: 'Name',
     description: 'Description',
     color: 'Color',
-    status: 'Status'
+    status: 'Status',
+    lead: 'Lead'
   },
   categories: {
     name: 'Name',
@@ -1897,6 +1900,7 @@ async function ensureTables() {
           { id: 'Status', type: 'Choice', widgetOptions: JSON.stringify({ choices: ['active', 'archived', 'completed'] }) },
           { id: 'Start_Date', type: 'Date' },
           { id: 'End_Date', type: 'Date' },
+          { id: 'Lead', type: 'Text' },
           { id: 'CreatedBy', type: 'Text' },
           { id: 'CreatedAt', type: 'Text' }
         ]]
@@ -1935,6 +1939,7 @@ async function ensureTables() {
       var projMig = [];
       if (projCols.indexOf('CreatedBy') === -1) projMig.push(['AddColumn', PROJECTS_TABLE, 'CreatedBy', { type: 'Text' }]);
       if (projCols.indexOf('CreatedAt') === -1) projMig.push(['AddColumn', PROJECTS_TABLE, 'CreatedAt', { type: 'Text' }]);
+      if (projCols.indexOf('Lead') === -1) projMig.push(['AddColumn', PROJECTS_TABLE, 'Lead', { type: 'Text' }]);
       if (projMig.length) { await grist.docApi.applyUserActions(projMig); console.log('[GristPM] CreatedBy/CreatedAt ajoutés à PM_Projects'); }
     } catch (e) {
       console.log('[GristPM] Migration CreatedBy ignorée :', e.message);
@@ -2461,6 +2466,7 @@ async function loadAllData() {
           Status: projData[statusCol] ? projData[statusCol][i] : 'active',
           Start_Date: projData.Start_Date ? projData.Start_Date[i] : null,
           End_Date: projData.End_Date ? projData.End_Date[i] : null,
+          Lead: projData.Lead ? projData.Lead[i] : '',
           CreatedBy: projData.CreatedBy ? projData.CreatedBy[i] : '',
           CreatedAt: projData.CreatedAt ? projData.CreatedAt[i] : ''
         });
@@ -2905,7 +2911,10 @@ function myProjectIdSet() {
   var em = (currentUserEmail || '').toLowerCase().trim();
   var mine = myAssigneeValue();
   var set = {};
-  projects.forEach(function (p) { if (em && (p.CreatedBy || '').toLowerCase().trim() === em) set[p.id] = true; });
+  projects.forEach(function (p) {
+    if (em && (p.CreatedBy || '').toLowerCase().trim() === em) set[p.id] = true;
+    if (mine && (p.Lead || '') === mine) set[p.id] = true; // responsable du projet
+  });
   if (mine) tasks.forEach(function (tk) {
     if (!tk.Project_Id) return;
     var list = (tk.Assignee || '').split(',').map(function (s) { return s.trim(); });
@@ -8500,6 +8509,19 @@ function renderActivityLog() {
 // PROJECT MANAGEMENT
 // =============================================================================
 
+// Remplit le sélecteur "Responsable" avec les utilisateurs (et présélectionne)
+function populateProjectLead(selectedValue) {
+  var sel = document.getElementById('project-lead');
+  if (!sel) return;
+  var html = '<option value="">--</option>';
+  users.forEach(function (u) {
+    var val = u.Email || u.Name;
+    if (!val) return;
+    html += '<option value="' + sanitize(val) + '"' + (val === selectedValue ? ' selected' : '') + '>' + sanitize(u.Name || u.Email) + '</option>';
+  });
+  sel.innerHTML = html;
+}
+
 function openProjectModal() {
   document.getElementById('project-modal').style.display = 'flex';
   document.getElementById('edit-project-id').value = '';
@@ -8507,6 +8529,7 @@ function openProjectModal() {
   document.getElementById('project-description').value = '';
   document.getElementById('project-color').value = '#6366f1';
   document.getElementById('project-status').value = 'active';
+  populateProjectLead('');
   document.getElementById('project-form-title').textContent = t('addProject');
   var psearch = document.getElementById('project-search');
   if (psearch) psearch.value = '';
@@ -8553,6 +8576,7 @@ function renderProjectList() {
     html += '<div class="project-item-info">';
     html += '<strong>' + sanitize(proj.Name) + '</strong>';
     var metaTxt = taskCount + ' ' + (currentLang === 'fr' ? 'tâches' : 'tasks');
+    if (proj.Lead) metaTxt += ' · 👤 ' + (currentLang === 'fr' ? 'resp. ' : 'lead ') + sanitize(getUserDisplayName(proj.Lead));
     if (proj.CreatedBy) metaTxt += ' · ' + (currentLang === 'fr' ? 'créé par ' : 'created by ') + sanitize(getUserDisplayName(proj.CreatedBy));
     html += '<span class="project-item-meta">' + metaTxt + '</span>';
     html += '</div>';
@@ -8585,6 +8609,7 @@ function editProject(projectId) {
   document.getElementById('project-description').value = proj.Description || '';
   document.getElementById('project-color').value = proj.Color || '#6366f1';
   document.getElementById('project-status').value = proj.Status || 'active';
+  populateProjectLead(proj.Lead || '');
   document.getElementById('project-form-title').textContent = t('editProject');
 }
 
@@ -8594,6 +8619,8 @@ async function saveProject() {
   var description = document.getElementById('project-description').value.trim();
   var color = document.getElementById('project-color').value;
   var status = document.getElementById('project-status').value;
+  var leadEl = document.getElementById('project-lead');
+  var lead = leadEl ? leadEl.value : '';
 
   if (!name) {
     showToast(t('projectName') + ' ' + t('required'), 'error');
@@ -8606,6 +8633,7 @@ async function saveProject() {
     setField(record, 'projects', 'description', description);
     setField(record, 'projects', 'color', color);
     setField(record, 'projects', 'status', status);
+    setField(record, 'projects', 'lead', lead);
     
     if (projectId) {
       await grist.docApi.applyUserActions([
@@ -8632,6 +8660,7 @@ async function saveProject() {
     document.getElementById('project-description').value = '';
     document.getElementById('project-color').value = '#6366f1';
     document.getElementById('project-status').value = 'active';
+    populateProjectLead('');
     document.getElementById('project-form-title').textContent = t('addProject');
   } catch (e) {
     console.error('Error saving project:', e);
