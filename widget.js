@@ -3621,6 +3621,13 @@ function sortKanbanTasks(list) {
       if (db) return 1;
       return 0;
     });
+  } else if (kanbanSort === 'priority') {
+    var po = { high: 0, medium: 1, low: 2 };
+    arr.sort(function(a, b) {
+      var pa = po[a.Priority] !== undefined ? po[a.Priority] : 3;
+      var pb = po[b.Priority] !== undefined ? po[b.Priority] : 3;
+      return pa - pb;
+    });
   }
   return arr; // 'manual' : ordre d'origine inchangé
 }
