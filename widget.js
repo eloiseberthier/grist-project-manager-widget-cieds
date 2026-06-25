@@ -5889,6 +5889,7 @@ function openNewTaskModal(defaultStatus) {
 
   // === LEFT PANEL ===
   html += '<div class="modal-detail-left">';
+  html += '<label class="detail-block-label" for="task-title">' + t('fieldTitle') + '</label>';
   html += '<input class="detail-title-input" type="text" id="task-title" placeholder="' + t('fieldTitle') + '" />';
 
   // Description
@@ -6096,6 +6097,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
 
   // === LEFT PANEL ===
   html += '<div class="modal-detail-left">';
+  html += '<label class="detail-block-label" for="task-title">' + t('fieldTitle') + '</label>';
   html += '<input class="detail-title-input" type="text" id="task-title" value="' + sanitize(task.Title) + '" placeholder="' + t('fieldTitle') + '" />';
 
   // Description
