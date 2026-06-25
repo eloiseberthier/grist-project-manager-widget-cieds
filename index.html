@@ -3312,11 +3312,13 @@
     .modal-detail-left { padding: 20px; border-right: 1px solid #f1f5f9; }
     .modal-detail-right { padding: 20px; background: #fafbfc; }
     .detail-title-input {
-      font-size: 20px; font-weight: 800; border: none; width: 100%;
-      padding: 4px 0; margin-bottom: 12px; background: transparent;
-      color: #1e293b;
+      font-size: 20px; font-weight: 800; width: 100%;
+      padding: 10px 12px; margin-bottom: 14px; background: #fff;
+      color: #1e293b; border: 1px solid #e2e8f0; border-radius: 10px;
+      transition: border-color .15s, box-shadow .15s;
     }
-    .detail-title-input:focus { outline: none; border-bottom: 2px solid #ef4444; }
+    .detail-title-input::placeholder { color: #94a3b8; font-weight: 600; }
+    .detail-title-input:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.12); }
     .detail-field {
       display: flex; align-items: flex-start; gap: 10px;
       margin-bottom: 14px;
