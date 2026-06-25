@@ -6096,7 +6096,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
 
   // === LEFT PANEL ===
   html += '<div class="modal-detail-left">';
-  html += '<input class="detail-title-input" type="text" id="task-title" value="' + sanitize(task.Title) + '" />';
+  html += '<input class="detail-title-input" type="text" id="task-title" value="' + sanitize(task.Title) + '" placeholder="' + t('fieldTitle') + '" />';
 
   // Description
   html += '<div class="detail-field">';
