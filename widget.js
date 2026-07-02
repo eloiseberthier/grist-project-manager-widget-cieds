@@ -1658,6 +1658,49 @@ function getUserDisplayName(emailOrName) {
   return emailOrName;
 }
 
+// --- Résolution d'identité -------------------------------------------------
+// task.Assignee peut contenir le NOM ou l'EMAIL selon l'éditeur / l'ancienneté
+// de la donnée : toute comparaison de personne doit accepter les deux.
+
+// Retrouve l'utilisateur correspondant à un identifiant (email OU nom)
+function findUserByIdent(v) {
+  var k = String(v == null ? '' : v).toLowerCase().trim();
+  if (!k) return null;
+  return users.find(function(u) {
+    return (u.Email || '').toLowerCase().trim() === k || (u.Name || '').toLowerCase().trim() === k;
+  }) || null;
+}
+
+// Ensemble (minuscule/trim) des identifiants désignant la même personne
+function personIdentSet(v) {
+  var set = {};
+  var k = String(v == null ? '' : v).toLowerCase().trim();
+  if (k) set[k] = true;
+  var u = findUserByIdent(v);
+  if (u) {
+    if (u.Email) set[String(u.Email).toLowerCase().trim()] = true;
+    if (u.Name) set[String(u.Name).toLowerCase().trim()] = true;
+  }
+  return set;
+}
+
+// La liste CSV d'assignés contient-elle l'un des identifiants ?
+function assigneeListHas(assigneeStr, identSet) {
+  return String(assigneeStr || '').split(',').some(function(s) {
+    var k = s.toLowerCase().trim();
+    return k && identSet[k];
+  });
+}
+
+// Email de la personne pour un identifiant (nom -> email via PM_Users)
+function resolveUserEmail(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  var u = findUserByIdent(s);
+  if (u && u.Email) return String(u.Email).trim();
+  return s.indexOf('@') !== -1 ? s : '';
+}
+
 function priorityLabel(p) {
   if (p === 'high') return t('priorityHigh');
   if (p === 'medium') return t('priorityMedium');
@@ -2550,10 +2593,10 @@ function renderProjectSelector() {
   }
   if (currentFilterAssignee) {
     var projIdSet = {};
+    var selIdentSet = personIdentSet(currentFilterAssignee);
     tasks.forEach(function(t) {
       if (!t.Project_Id) return;
-      var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); });
-      if (list.indexOf(currentFilterAssignee) !== -1) projIdSet[t.Project_Id] = true;
+      if (assigneeListHas(t.Assignee, selIdentSet)) projIdSet[t.Project_Id] = true;
     });
     // Si aucune tâche associée, on laisse les projets courants (sinon UX bloquée)
     var filtered = visibleProjects.filter(function(p) { return projIdSet[p.id]; });
@@ -2658,7 +2701,7 @@ function renderProjectSelector() {
     if (mineOnly) bits.push('👤 ' + (currentLang === 'fr' ? 'Mes projets' : 'My projects'));
     if (currentFilterRole) bits.push('👔 ' + sanitize(roleLabel(currentFilterRole)));
     if (currentFilterAssignee) {
-      var u = users.find(function(x) { return (x.Email || x.Name) === currentFilterAssignee; });
+      var u = findUserByIdent(currentFilterAssignee);
       var displayName = u ? (u.Name || u.Email) : currentFilterAssignee;
       bits.push('👤 ' + sanitize(displayName));
     }
@@ -2685,7 +2728,9 @@ function buildFilterCombo(id, placeholder, options, selectedValue, onSelect) {
   h += '<div class="filter-combo-list" id="fc-list-' + id + '">';
   h += '<div class="filter-combo-opt' + (!selectedValue ? ' selected' : '') + '" data-value="" data-label="' + sanitize(placeholder) + '" onclick="selectFilterCombo(\'' + id + '\', \'\')">' + sanitize(placeholder) + '</div>';
   options.forEach(function(o) {
-    h += '<div class="filter-combo-opt' + (o.value === selectedValue ? ' selected' : '') + '" data-value="' + sanitize(o.value) + '" data-label="' + sanitize(o.label) + '" onclick="selectFilterCombo(\'' + id + '\', \'' + sanitize(o.value).replace(/'/g, "\\'") + '\')">' + sanitize(o.label) + '</div>';
+    // La valeur est lue depuis data-value via getAttribute (dé-échappée par le
+    // navigateur) : une catégorie/tag avec & < > " arrive intacte au callback.
+    h += '<div class="filter-combo-opt' + (o.value === selectedValue ? ' selected' : '') + '" data-value="' + sanitize(o.value) + '" data-label="' + sanitize(o.label) + '" onclick="selectFilterComboEl(\'' + id + '\', this)">' + sanitize(o.label) + '</div>';
   });
   h += '</div></div></div>';
   window['_fcCallback_' + id] = onSelect;
@@ -2825,6 +2870,11 @@ function selectFilterCombo(id, value) {
   if (cb) cb(value);
 }
 
+// Variante DOM : lit la valeur brute depuis data-value (dé-échappée par getAttribute)
+function selectFilterComboEl(id, el) {
+  selectFilterCombo(id, el ? (el.getAttribute('data-value') || '') : '');
+}
+
 function toggleProjectDropdown() {
   var dd = document.getElementById('project-dropdown');
   var btn = document.getElementById('proj-combobox-btn');
@@ -2954,10 +3004,8 @@ function filterByRole(role) {
   currentFilterRole = role || null;
   // Si la personne sélectionnée n'a plus le rôle, la déselectionner
   if (currentFilterRole && currentFilterAssignee) {
-    var stillValid = users.some(function(u) {
-      var val = u.Email || u.Name;
-      return val === currentFilterAssignee && userMatchesRole(u, currentFilterRole);
-    });
+    var selUser = findUserByIdent(currentFilterAssignee);
+    var stillValid = !!(selUser && userMatchesRole(selUser, currentFilterRole));
     if (!stillValid) {
       currentFilterAssignee = null;
       currentProjectId = null;
@@ -2972,10 +3020,10 @@ function filterByAssignee(name) {
   currentFilterAssignee = name || null;
   // Si le projet sélectionné n'a plus de tâches pour cette personne, le déselectionner
   if (currentFilterAssignee && currentProjectId) {
+    var idSet = personIdentSet(currentFilterAssignee);
     var match = tasks.some(function(t) {
       if (Number(t.Project_Id) !== Number(currentProjectId)) return false;
-      var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); });
-      return list.indexOf(currentFilterAssignee) !== -1;
+      return assigneeListHas(t.Assignee, idSet);
     });
     if (!match) currentProjectId = null;
   }
@@ -3019,26 +3067,26 @@ function getFilteredTasks() {
     return t.Status !== 'archived';
   });
   if (currentFilterRole) {
-    // Identifiants attendus dans task.Assignee : Email en priorité, sinon Name
-    var roleIds = users
-      .filter(function(u) { return userMatchesRole(u, currentFilterRole); })
-      .map(function(u) { return u.Email || u.Name; });
-    result = result.filter(function(t) {
-      var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      return list.some(function(a) { return roleIds.indexOf(a) !== -1; });
-    });
+    // task.Assignee peut contenir le Nom OU l'Email : on accepte les deux
+    var roleIdSet = {};
+    users.filter(function(u) { return userMatchesRole(u, currentFilterRole); })
+      .forEach(function(u) {
+        if (u.Email) roleIdSet[String(u.Email).toLowerCase().trim()] = true;
+        if (u.Name) roleIdSet[String(u.Name).toLowerCase().trim()] = true;
+      });
+    result = result.filter(function(t) { return assigneeListHas(t.Assignee, roleIdSet); });
   }
   if (currentFilterAssignee) {
-    result = result.filter(function(t) {
-      var list = (t.Assignee || '').split(',').map(function(s) { return s.trim(); });
-      return list.indexOf(currentFilterAssignee) !== -1;
-    });
+    var identSet = personIdentSet(currentFilterAssignee);
+    result = result.filter(function(t) { return assigneeListHas(t.Assignee, identSet); });
   }
   if (currentFilterCategory) {
-    result = result.filter(function(t) { return t.Category === currentFilterCategory; });
+    var catKey = String(currentFilterCategory).trim();
+    result = result.filter(function(t) { return String(t.Category || '').trim() === catKey; });
   }
   if (currentFilterTag) {
-    result = result.filter(function(t) { return t.Tag === currentFilterTag; });
+    var tagKey = String(currentFilterTag).trim();
+    result = result.filter(function(t) { return String(t.Tag || '').trim() === tagKey; });
   }
   if (mineOnly && !currentProjectId) {
     var myIds = myProjectIdSet();
@@ -10141,9 +10189,15 @@ async function notifyConcernedUsers(taskId, emails, eventType, title) {
   var me = (currentUserEmail || '').toLowerCase().trim();
   var seen = {}, recipients = [];
   (emails || []).forEach(function(e) {
-    var v = String(e || '').trim();
+    // e peut être un NOM (assignation par nom) : on résout vers l'email PM_Users,
+    // sinon User_Email recevrait un nom et les automatisations (n8n) échoueraient.
+    var v = resolveUserEmail(e);
+    if (!v) {
+      if (String(e || '').trim()) console.warn('[GristPM] notification ignorée : pas d\'email pour "' + e + '" dans PM_Users');
+      return;
+    }
     var k = v.toLowerCase();
-    if (v && k !== me && !seen[k]) { seen[k] = 1; recipients.push(v); }
+    if (k !== me && !seen[k]) { seen[k] = 1; recipients.push(v); }
   });
   if (!recipients.length) return;
   var msg = (eventType === 'task_created')
@@ -10158,7 +10212,10 @@ async function notifyConcernedUsers(taskId, emails, eventType, title) {
 
 function resolveRecipients(action, actionTarget, task) {
   if (action === 'notify_assignee') {
-    return (task.Assignee || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    // Assignee peut contenir des noms : résoudre chacun vers l'email PM_Users
+    return (task.Assignee || '').split(',')
+      .map(function(s) { return resolveUserEmail(s); })
+      .filter(Boolean);
   }
   if (action === 'notify_project_lead') {
     return users.filter(function(u) { return u.Role === 'admin'; }).map(function(u) { return u.Email; }).filter(Boolean);
