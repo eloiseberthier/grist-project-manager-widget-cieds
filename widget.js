@@ -2190,6 +2190,28 @@ async function ensureTables() {
 // LOAD DATA
 // =============================================================================
 
+/**
+ * Supprime les brouillons fantômes : tâches créées par l'approche « brouillon »
+ * mais jamais renseignées (aucun titre, description, responsable, ni sous-tâche),
+ * laissées derrière quand la modale s'est fermée par un chemin inhabituel.
+ * Prudent : Owner uniquement, cibles totalement vides, hors brouillon en cours.
+ */
+async function cleanupEmptyDraftTasks() {
+  if (!isOwner) return;
+  var ghosts = tasks.filter(function (tk) {
+    if (tk.id === draftTaskId) return false;
+    if ((tk.Title || '').trim()) return false;
+    if ((tk.Description || '').trim()) return false;
+    if ((tk.Assignee || '').trim()) return false;
+    return getTaskSubtasks(tk.id).length === 0;
+  });
+  if (!ghosts.length) return;
+  try {
+    await grist.docApi.applyUserActions(ghosts.map(function (tk) { return ['RemoveRecord', TASKS_TABLE, tk.id]; }));
+    tasks = tasks.filter(function (tk) { return ghosts.indexOf(tk) === -1; });
+  } catch (e) { console.error('cleanupEmptyDraftTasks:', e); }
+}
+
 async function loadAllData() {
   // Load column mapping first
   await loadColumnMapping();
@@ -2560,6 +2582,7 @@ async function loadAllData() {
     activityLog = [];
   }
 
+  await cleanupEmptyDraftTasks();
   renderProjectSelector();
   refreshAllViews();
 }
@@ -6692,6 +6715,14 @@ function openEditTaskModal(taskId, preserveAssignees) {
   renderAttachmentsSection(task.id);
 }
 
+// Suffixe de conteneur DOM pour un rôle RACI. editAssignees -> 'assignee' (et non
+// 'assignees') : c'est ce décalage singulier/pluriel qui empêchait la mise à jour
+// de l'affichage lors du retrait d'un responsable (R).
+function raciSuffix(varName) {
+  return ({ editAssignees: 'assignee', editAccountable: 'accountable', editConsulted: 'consulted', editInformed: 'informed' })[varName]
+    || String(varName).replace('edit', '').toLowerCase();
+}
+
 function getRaciArray(varName) {
   if (varName === 'editAssignees') return editAssignees;
   if (varName === 'editAccountable') return editAccountable;
@@ -6712,7 +6743,7 @@ function renderRaciChips(varName) {
         break;
       }
     }
-    html += '<span class="assignee-chip-tag">' + sanitize(displayName) + ' <span class="chip-remove" onclick="removeRaciChip(\'' + varName + '\',' + i + ',\'' + varName.replace('edit', '').toLowerCase() + '\')">✕</span></span>';
+    html += '<span class="assignee-chip-tag">' + sanitize(displayName) + ' <span class="chip-remove" onclick="removeRaciChip(\'' + varName + '\',' + i + ',\'' + raciSuffix(varName) + '\')">✕</span></span>';
   }
   return html;
 }
@@ -6754,7 +6785,7 @@ function addRaciChip(varName, selectSuffix) {
 function removeRaciChip(varName, index, selectSuffix) {
   var arr = getRaciArray(varName);
   arr.splice(index, 1);
-  var container = document.getElementById(selectSuffix + '-chips') || document.getElementById(varName.replace('edit', '').toLowerCase() + '-chips');
+  var container = document.getElementById(selectSuffix + '-chips') || document.getElementById(raciSuffix(varName) + '-chips');
   if (container) container.innerHTML = renderRaciChips(varName);
 }
 
@@ -6841,10 +6872,46 @@ async function quickAction(taskId, newStatus) {
 // SUBTASKS CRUD
 // =============================================================================
 
+/**
+ * Fige dans la base les champs actuellement saisis dans l'éditeur de tâche, sans
+ * fermer la modale ni déclencher notifications/automatisations. Appelé avant toute
+ * opération sur une sous-tâche : celles-ci rouvrent la modale depuis la base, ce
+ * qui écrasait sinon la description, le groupe, les dates… saisis mais non validés.
+ */
+async function persistTaskFormFields(taskId) {
+  if (taskId == null) return;
+  var titleEl = document.getElementById('task-title');
+  if (!titleEl) return;                       // l'éditeur n'est pas ouvert : rien à figer
+  var record = {};
+  setField(record, 'tasks', 'title', titleEl.value.trim());
+  var el;
+  if ((el = document.getElementById('task-desc'))) setField(record, 'tasks', 'description', el.value.trim());
+  if ((el = document.getElementById('task-status'))) setField(record, 'tasks', 'status', el.value);
+  if ((el = document.getElementById('task-priority'))) setField(record, 'tasks', 'priority', el.value);
+  setField(record, 'tasks', 'assignee', editAssignees.join(', '));
+  if (raciEnabled) {
+    record.Accountable = editAccountable.join(', ');
+    record.Consulted = editConsulted.join(', ');
+    record.Informed = editInformed.join(', ');
+  }
+  if ((el = document.getElementById('task-group'))) setField(record, 'tasks', 'group', el.value);
+  if ((el = document.getElementById('task-start'))) setField(record, 'tasks', 'startDate', toEpoch(el.value));
+  if ((el = document.getElementById('task-due'))) setField(record, 'tasks', 'dueDate', toEpoch(el.value));
+  if ((el = document.getElementById('task-category'))) setField(record, 'tasks', 'category', el.value.trim());
+  if ((el = document.getElementById('task-project'))) setField(record, 'tasks', 'projectId', el.value ? parseInt(el.value) : 0);
+  if ((el = document.getElementById('task-recurrence'))) setField(record, 'tasks', 'recurrence', el.value);
+  if ((el = document.getElementById('task-tag'))) setField(record, 'tasks', 'tag', el.value.trim());
+  if ((el = document.getElementById('task-extension-date'))) record.Extension_Date = toEpoch(el.value);
+  if ((el = document.getElementById('task-auto-extend'))) record.Auto_Extend = el.checked;
+  try { await grist.docApi.applyUserActions([['UpdateRecord', TASKS_TABLE, taskId, record]]); }
+  catch (e) { console.error('persistTaskFormFields:', e); }
+}
+
 async function addSubtask(parentTaskId) {
   var input = document.getElementById('new-subtask-input');
   var title = input.value.trim();
   if (!title) return;
+  await persistTaskFormFields(parentTaskId);   // fige la saisie en cours avant de rouvrir la modale
 
   var savedAssignees = editAssignees.slice();
   var savedAccountable = editAccountable.slice();
@@ -6897,6 +6964,8 @@ async function toggleSubtask(subtaskId, completed) {
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
   var scrollPos = getModalScrollTop();
+  var _tgSt = subtasks.find(function(st){ return st.id === subtaskId; });
+  if (_tgSt) await persistTaskFormFields(_tgSt.Parent_Task_Id);   // préserve la saisie parent
   try {
     var newStatus = completed ? 'done' : 'todo';
     await grist.docApi.applyUserActions([
@@ -6930,6 +6999,7 @@ async function deleteSubtask(subtaskId, parentTaskId) {
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
   var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(parentTaskId);   // préserve la saisie parent en cours
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', SUBTASKS_TABLE, subtaskId]
@@ -7047,6 +7117,7 @@ async function saveEditSubtask(subtaskId, parentTaskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  await persistTaskFormFields(parentTaskId);   // préserve la saisie parent en cours
   try {
     await grist.docApi.applyUserActions([['UpdateRecord', SUBTASKS_TABLE, subtaskId, fields]]);
     showToast(t('subtaskSaved'), 'success');
@@ -7840,6 +7911,8 @@ async function deleteTask(taskId) {
     var deletedTask = tasks.find(function(t2) { return t2.id === taskId; });
     showToast(t('taskDeleted'), 'info');
     logActivity('task_deleted', taskId, deletedTask ? deletedTask.Title : '', '');
+    if (draftTaskId === taskId) draftTaskId = null;
+    var mc = document.getElementById('modal-container'); if (mc) mc.innerHTML = '';  // fermer la vue d'édition
     await loadAllData();
   } catch (e) {
     console.error('Error deleting task:', e);
