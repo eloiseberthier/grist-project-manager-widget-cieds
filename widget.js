@@ -2966,7 +2966,7 @@ function selectProjectOption(projectId) {
 
 function filterByProject(projectId) {
   currentProjectId = projectId ? parseInt(projectId) : null;
-  localStorage.setItem('pm-current-project', currentProjectId || '');
+  localStorage.setItem(projectStorageKey(), currentProjectId || '');
   renderProjectSelector();
   refreshAllViews();
 }
@@ -3003,24 +3003,81 @@ function toggleMyProjects() {
   refreshAllViews();
 }
 
+// B1 : les filtres etaient stockes sous une cle globale, partagee par tous les
+// documents servis depuis la meme origine — d'ou des filtres qui « suivaient »
+// d'un document a l'autre. On prefixe desormais chaque cle par l'id du document.
+var pmDocKey = ':doc';   // valeur de repli avant resolution de l'id du document
+
+async function resolveDocKey() {
+  var name = '';
+  try {
+    if (grist.docApi && typeof grist.docApi.getDocName === 'function') {
+      name = await grist.docApi.getDocName();
+    }
+  } catch (e) { /* ignore */ }
+  pmDocKey = ':' + (name ? String(name) : 'doc');
+  // Purge unique des anciennes cles globales, qui fuyaient d'un document a l'autre
+  try {
+    if (!localStorage.getItem('pm-filters-scoped')) {
+      localStorage.removeItem('pm-filters');
+      localStorage.removeItem('pm-current-project');
+      localStorage.setItem('pm-filters-scoped', '1');
+    }
+  } catch (e) {}
+}
+
+function filtersStorageKey() { return 'pm-filters' + pmDocKey; }
+function projectStorageKey() { return 'pm-current-project' + pmDocKey; }
+
 // Persistance des filtres (conservés en changeant de page / au rechargement)
 function persistFilters() {
   try {
-    localStorage.setItem('pm-filters', JSON.stringify({
+    localStorage.setItem(filtersStorageKey(), JSON.stringify({
       role: currentFilterRole, assignee: currentFilterAssignee,
       category: currentFilterCategory, tag: currentFilterTag, mineOnly: mineOnly
     }));
   } catch (e) {}
 }
+
+// B1 : une valeur restauree qui n'existe plus dans CE document n'apparait dans
+// aucune liste — le combo affichait alors « — Personne — » alors que le filtre
+// etait bien actif, et des taches disparaissaient sans filtre visible.
+// On ecarte donc toute valeur introuvable dans les donnees chargees.
+function sanitizeRestoredFilters() {
+  if (currentFilterRole) {
+    var known = false;
+    users.forEach(function(u) { getUserRoles(u).forEach(function(r) { if (r === currentFilterRole) known = true; }); });
+    if (!known) currentFilterRole = null;
+  }
+  if (currentFilterAssignee && !findUserByIdent(currentFilterAssignee)) currentFilterAssignee = null;
+  if (currentFilterCategory) {
+    var catKey = String(currentFilterCategory).trim();
+    var catFound = tasks.some(function(t) { return String(t.Category || '').trim() === catKey; });
+    if (!catFound) currentFilterCategory = null;
+  }
+  if (currentFilterTag) {
+    var tagKey = String(currentFilterTag).trim();
+    var tagFound = tags.some(function(tg) { return String(tg.Name || '').trim() === tagKey; });
+    if (!tagFound) currentFilterTag = null;
+  }
+  if (currentProjectId && !projects.some(function(pr) { return pr.id === currentProjectId; })) {
+    currentProjectId = null;
+  }
+}
+
 function restoreFilters() {
   try {
-    var s = JSON.parse(localStorage.getItem('pm-filters') || '{}');
+    var s = JSON.parse(localStorage.getItem(filtersStorageKey()) || '{}');
     currentFilterRole = s.role || null;
     currentFilterAssignee = s.assignee || null;
     currentFilterCategory = s.category || null;
     currentFilterTag = s.tag || null;
     mineOnly = !!s.mineOnly;
   } catch (e) {}
+  try { var sp = localStorage.getItem(projectStorageKey()); currentProjectId = sp ? (parseInt(sp) || null) : null; } catch (e) {}
+  sanitizeRestoredFilters();
+  persistFilters();
+  try { localStorage.setItem(projectStorageKey(), currentProjectId || ''); } catch (e) {}
 }
 
 function filterByRole(role) {
@@ -3076,7 +3133,7 @@ function resetFilters() {
   currentFilterTag = null;
   mineOnly = false;
   currentProjectId = null;
-  localStorage.setItem('pm-current-project', '');
+  localStorage.setItem(projectStorageKey(), '');
   persistFilters();
   renderProjectSelector();
   refreshAllViews();
@@ -4532,6 +4589,56 @@ function renderGanttTaskLabel(task) {
   return html;
 }
 
+// C2/C3 : position en pixels d'une date dans une grille de colonnes.
+// Au lieu de coller les barres sur des colonnes entieres, on interpole a
+// l'interieur de la colonne : une tache qui demarre un vendredi ne part plus du
+// lundi de sa semaine, ni du 1er de son mois.
+function ganttPxForDate(date, cols, colWidth) {
+  var ts = date.getTime();
+  for (var i = 0; i < cols.length; i++) {
+    var cs = cols[i].start.getTime(), ce = cols[i].end.getTime();
+    if (ts < cs) return i * colWidth;
+    if (ts <= ce) {
+      var span = ce - cs;
+      return i * colWidth + (span > 0 ? (ts - cs) / span : 0) * colWidth;
+    }
+  }
+  return cols.length * colWidth;
+}
+
+// Retourne { idx, left, width } : colonne d'ancrage de la barre, decalage dans
+// cette colonne, largeur totale — ou null si la barre est hors de la fenetre.
+function ganttBarGeom(barStart, barEnd, cols, colWidth) {
+  if (!barStart || !barEnd || !cols.length) return null;
+  if (barEnd < cols[0].start || barStart > cols[cols.length - 1].end) return null;
+  var total = cols.length * colWidth;
+  var startPx = Math.max(0, Math.min(ganttPxForDate(barStart, cols, colWidth), total));
+  var endPx = Math.max(0, Math.min(ganttPxForDate(barEnd, cols, colWidth), total));
+  if (endPx < startPx) endPx = startPx;
+  var idx = Math.min(cols.length - 1, Math.floor(startPx / colWidth));
+  return { idx: idx, left: startPx - idx * colWidth, width: endPx - startPx };
+}
+
+// C1 : « Aujourd'hui » doit amener le jour courant au milieu du diagramme,
+// pas au debut du premier mois de la fenetre.
+var ganttPendingCenter = false;
+
+function ganttCenterOnToday() {
+  var container = document.querySelector('#gantt-view .gantt-container');
+  var col = document.getElementById('gantt-today-col');
+  if (!container || !col) return;
+  var labelEl = container.querySelector('.gantt-task-label');
+  var labelW = labelEl ? labelEl.offsetWidth : 220;
+  var visible = Math.max(0, container.clientWidth - labelW);
+  container.scrollLeft = Math.max(0, col.offsetLeft + col.offsetWidth / 2 - labelW - visible / 2);
+}
+
+function ganttAfterRender() {
+  if (!ganttPendingCenter) return;
+  ganttPendingCenter = false;
+  requestAnimationFrame(function() { ganttCenterOnToday(); });
+}
+
 function renderGanttView() {
   var yearSelect = document.getElementById('gantt-year');
   if (yearSelect.options.length === 0) {
@@ -4586,32 +4693,56 @@ function renderGanttView() {
 
   // ===== WEEKS MODE =====
   if (ganttMode === 'weeks') {
-    var eightWeeksAgo = new Date(ganttYear, ganttMonth, 1);
-    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
-    var startWeek = getISOWeek(eightWeeksAgo);
+    var weekColW = 80;
+    // Semaines ISO engendrees de proche en proche depuis le lundi de reference :
+    // l'ancien calcul (numero + annee courante) se trompait d'annee autour de
+    // janvier/decembre.
+    var weekAnchor = new Date(ganttYear, ganttMonth, 1);
+    weekAnchor.setDate(weekAnchor.getDate() - 56);
+    var wsFirst = new Date(weekAnchor);
+    wsFirst.setDate(wsFirst.getDate() - ((wsFirst.getDay() + 6) % 7)); // lundi
+    wsFirst.setHours(0, 0, 0, 0);
     var numWeeks = 34;
     var weeks = [];
     for (var w = 0; w < numWeeks; w++) {
-      var wn = startWeek + w;
-      var yr = ganttYear;
-      if (wn > 52) { wn -= 52; yr++; }
-      var ws = getWeekStart(yr, wn);
+      var ws = new Date(wsFirst);
+      ws.setDate(ws.getDate() + w * 7);
       var we = new Date(ws);
       we.setDate(we.getDate() + 6);
-      weeks.push({ num: wn, year: yr, start: ws, end: we });
+      we.setHours(23, 59, 59, 999);
+      weeks.push({ num: getISOWeek(ws), year: ws.getFullYear(), start: ws, end: we });
     }
+    var weekIsCurrent = function(wk) { return today >= wk.start && today <= wk.end; };
 
-    // Header: week numbers with month subtitle
-    html += '<thead><tr><th class="gantt-task-label" style="text-align:left;">' + t('colTaskName') + '</th>';
+    // En-tete compact : ligne de regroupement par mois + ligne des numeros de semaine
+    html += '<thead><tr><th class="gantt-task-label" style="text-align:left;" rowspan="2">' + t('colTaskName') + '</th>';
+    var prevWm = -1, prevWy = -1;
+    for (var wi = 0; wi < weeks.length; wi++) {
+      var wm = weeks[wi].start.getMonth(), wy = weeks[wi].start.getFullYear();
+      if (wm !== prevWm || wy !== prevWy) {
+        var wSpan = 0;
+        for (var wj = wi; wj < weeks.length && weeks[wj].start.getMonth() === wm && weeks[wj].start.getFullYear() === wy; wj++) wSpan++;
+        html += '<th colspan="' + wSpan + '" style="font-size:11px;font-weight:700;color:#475569;background:#f8fafc;border-bottom:1px solid #e2e8f0;">' + monthNames[wm].toUpperCase() + ' ' + String(wy).substring(2) + '</th>';
+        prevWm = wm; prevWy = wy;
+      }
+    }
+    html += '</tr><tr>';
     for (var wi = 0; wi < weeks.length; wi++) {
       var wk = weeks[wi];
-      var isCurrentWeek = getISOWeek(today) === wk.num && today.getFullYear() === wk.year;
-      html += '<th style="min-width:80px;' + (isCurrentWeek ? 'background:#fef2f2;color:#ef4444;' : '') + '">';
-      html += '<div style="font-size:11px;font-weight:800;">S' + wk.num + '</div>';
-      html += '<div style="font-size:9px;font-weight:400;color:#94a3b8;">' + monthNamesShort[wk.start.getMonth()] + ' ' + String(wk.start.getFullYear()).substring(2) + '</div>';
-      html += '</th>';
+      var isCurrentWeek = weekIsCurrent(wk);
+      html += '<th' + (isCurrentWeek ? ' id="gantt-today-col" class="today"' : '') + ' style="min-width:' + weekColW + 'px;">S' + wk.num + '</th>';
     }
     html += '</tr></thead><tbody>';
+
+    // Position du jour courant DANS sa colonne (trait rouge vertical)
+    var wTodayIdx = -1, wTodayPct = 0;
+    for (var wi = 0; wi < weeks.length; wi++) {
+      if (weekIsCurrent(weeks[wi])) {
+        wTodayIdx = wi;
+        wTodayPct = Math.round((today - weeks[wi].start) / (weeks[wi].end - weeks[wi].start) * 100);
+        break;
+      }
+    }
 
     // Task rows
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
@@ -4624,73 +4755,46 @@ function renderGanttView() {
 
       var tStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
       var tEnd = task.Due_Date ? new Date(task.Due_Date * 1000) : null;
-      if (!tStart && tEnd) tStart = tEnd;
-      if (!tEnd && tStart) tEnd = tStart;
+      if (!tStart && tEnd) tStart = new Date(tEnd);
+      if (!tEnd && tStart) tEnd = new Date(tStart);
       if (tStart) tStart.setHours(0, 0, 0, 0);
       if (tEnd) tEnd.setHours(23, 59, 59, 999);
 
-      // Find first and last week index where bar should appear
-      var barStartIdx = -1, barEndIdx = -1;
-      for (var wi = 0; wi < weeks.length; wi++) {
-        var wk = weeks[wi];
-        if (tStart && tEnd && tStart <= wk.end && tEnd >= wk.start) {
-          if (barStartIdx === -1) barStartIdx = wi;
-          barEndIdx = wi;
-        }
-      }
-
+      // C2 : geometrie au jour pres a l'interieur de la semaine
+      var wGeom = ganttBarGeom(tStart, tEnd, weeks, weekColW);
       var extEnd = getTaskExtensionEnd(task);
-      var extStartIdx = -1, extEndIdx = -1;
-      if (extEnd && tEnd && extEnd > tEnd) {
-        for (var ewi = 0; ewi < weeks.length; ewi++) {
-          if (tEnd <= weeks[ewi].end && extEnd >= weeks[ewi].start) {
-            if (extStartIdx === -1) extStartIdx = ewi;
-            extEndIdx = ewi;
-          }
-        }
-      }
+      var wExtGeom = (extEnd && tEnd && extEnd > tEnd) ? ganttBarGeom(tEnd, extEnd, weeks, weekColW) : null;
       var extColor = getExtensionBarColor(task);
 
       for (var wi = 0; wi < weeks.length; wi++) {
-        var isCurrentWeek = getISOWeek(today) === weeks[wi].num && today.getFullYear() === weeks[wi].year;
-        html += '<td class="gantt-cell" style="position:relative;' + (isCurrentWeek ? 'background:#fef2f2;' : '') + '">';
-        if (wi === barStartIdx) {
-          var spanCols = barEndIdx - barStartIdx + 1;
-          var widthPx = spanCols * 80;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + widthPx + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        html += '<td class="gantt-cell' + (wi === wTodayIdx ? ' today-col' : '') + '" style="position:relative;min-width:' + weekColW + 'px;">';
+        if (wi === wTodayIdx) {
+          html += '<div style="position:absolute;top:0;bottom:0;left:' + wTodayPct + '%;width:2px;background:#ef4444;z-index:1;pointer-events:none;"></div>';
         }
-        if (wi === extStartIdx && extStartIdx >= 0) {
-          var extSpan = extEndIdx - extStartIdx + 1;
-          var extW = extSpan * 80;
-          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + extW + 'px;border-color:' + extColor + ';background:' + extColor + '20;"></div>';
+        if (wGeom && wi === wGeom.idx) {
+          html += '<div class="gantt-bar ' + barClass + '" style="left:' + wGeom.left + 'px;width:' + wGeom.width + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        }
+        if (wExtGeom && wi === wExtGeom.idx) {
+          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:' + wExtGeom.left + 'px;width:' + wExtGeom.width + 'px;border-color:' + extColor + ';background:' + extColor + '20;"></div>';
         }
         html += '</td>';
       }
 
       html += '</tr>';
 
-      // === Lignes sous-tâches (mode Semaines) ===
+      // === Lignes sous-taches (mode Semaines) ===
       if (expandedGanttTasks[task.id]) {
         var sts = getGanttSubtasks(task.id);
         for (var sti = 0; sti < sts.length; sti++) {
           var st = sts[sti];
           var stRange = getGanttSubtaskRange(st, task);
           var stBarClass = ganttSubtaskBarClass(st, task);
+          var stGeom = ganttBarGeom(stRange.start, stRange.end, weeks, weekColW);
           html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
-          var stStartIdx = -1, stEndIdx = -1;
           for (var wi2 = 0; wi2 < weeks.length; wi2++) {
-            if (stRange.start <= weeks[wi2].end && stRange.end >= weeks[wi2].start) {
-              if (stStartIdx === -1) stStartIdx = wi2;
-              stEndIdx = wi2;
-            }
-          }
-          for (var wi2 = 0; wi2 < weeks.length; wi2++) {
-            var isCW = getISOWeek(today) === weeks[wi2].num && today.getFullYear() === weeks[wi2].year;
-            html += '<td class="gantt-cell" style="position:relative;' + (isCW ? 'background:#fef2f2;' : '') + '">';
-            if (wi2 === stStartIdx) {
-              var stSpan = stEndIdx - stStartIdx + 1;
-              var stWidth = stSpan * 80;
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stWidth + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
+            html += '<td class="gantt-cell' + (wi2 === wTodayIdx ? ' today-col' : '') + '" style="position:relative;min-width:' + weekColW + 'px;">';
+            if (stGeom && wi2 === stGeom.idx) {
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:' + stGeom.left + 'px;width:' + stGeom.width + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
             }
             html += '</td>';
           }
@@ -4736,13 +4840,15 @@ function renderGanttView() {
       var yr = startYr + Math.floor(ym / 12);
       var mo = ym % 12;
       var isCurrent = (yr === todayYear && mo === todayMonth);
-      html += '<th style="min-width:' + colWidth + 'px;' + (isCurrent ? 'background:#fef2f2;color:#ef4444;' : '') + '">' + monthNamesShort[mo].substring(0, 3) + '</th>';
+      html += '<th' + (isCurrent ? ' id="gantt-today-col"' : '') + ' style="min-width:' + colWidth + 'px;' + (isCurrent ? 'background:#fef2f2;color:#ef4444;' : '') + '">' + monthNamesShort[mo].substring(0, 3) + '</th>';
     }
     html += '</tr></thead><tbody>';
 
     for (var ti = 0; ti < tasksWithDates.length; ti++) {
       var task = tasksWithDates[ti];
       var barClass = getGanttBarClass(task);
+      var barCustomColor = getGanttBarColor(task);
+      var barCustomStyle = barCustomColor ? 'background:' + barCustomColor + ';color:white;' : '';
       html += '<tr>' + renderGanttTaskLabel(task);
 
       var yTStart = task.Start_Date ? new Date(task.Start_Date * 1000) : null;
@@ -4838,17 +4944,25 @@ function renderGanttView() {
 
   // ===== MONTHS MODE =====
   if (ganttMode === 'months') {
-    var startDate = new Date(ganttYear, 0, 1);
-    var endDate = new Date(ganttYear, 11, 31);
+    // C3 : les colonnes s'elargissent pour occuper toute la largeur disponible
+    // (le diagramme laissait la moitie de l'ecran vide).
+    var ganttHost = document.getElementById('gantt-view');
+    var availW = ganttHost ? ganttHost.clientWidth : 0;
+    var monthColW = Math.max(80, Math.floor(((availW || 1100) - 236) / 12));
+
+    var months = [];
+    for (var m = 0; m < 12; m++) {
+      months.push({ start: new Date(ganttYear, m, 1, 0, 0, 0, 0), end: new Date(ganttYear, m + 1, 0, 23, 59, 59, 999) });
+    }
 
     var todayMonth = today.getMonth();
     var todayYear = today.getFullYear();
-    var todayDayPct = (todayYear === ganttYear && todayMonth >= 0 && todayMonth < 12) ? Math.round((today.getDate() - 1) / new Date(ganttYear, todayMonth + 1, 0).getDate() * 100) : -1;
+    var todayDayPct = (todayYear === ganttYear) ? Math.round((today.getDate() - 1) / new Date(ganttYear, todayMonth + 1, 0).getDate() * 100) : -1;
 
     html += '<thead><tr><th class="gantt-task-label" style="text-align:left;">' + t('colTaskName') + '</th>';
     for (var m = 0; m < 12; m++) {
       var isCurrentMonth = (ganttYear === todayYear && m === todayMonth);
-      html += '<th colspan="1" style="' + (isCurrentMonth ? 'background:#fef2f2;color:#ef4444;' : '') + '">' + monthNames[m].substring(0, 3).toUpperCase() + '</th>';
+      html += '<th' + (isCurrentMonth ? ' id="gantt-today-col" class="today"' : '') + ' style="min-width:' + monthColW + 'px;">' + monthNames[m].substring(0, 3).toUpperCase() + '</th>';
     }
     html += '</tr></thead><tbody>';
 
@@ -4867,71 +4981,45 @@ function renderGanttView() {
       if (mTStart) mTStart.setHours(0, 0, 0, 0);
       if (mTEnd) mTEnd.setHours(23, 59, 59, 999);
 
-      var mBarStartIdx = -1, mBarEndIdx = -1;
-      for (var m = 0; m < 12; m++) {
-        var ms = new Date(ganttYear, m, 1);
-        var me = new Date(ganttYear, m + 1, 0, 23, 59, 59, 999);
-        if (mTStart && mTEnd && mTStart <= me && mTEnd >= ms) {
-          if (mBarStartIdx === -1) mBarStartIdx = m;
-          mBarEndIdx = m;
-        }
-      }
-
+      // C3 : geometrie au jour pres a l'interieur du mois
+      var mGeom = ganttBarGeom(mTStart, mTEnd, months, monthColW);
       var mExtEnd = getTaskExtensionEnd(task);
-      var mExtStart = -1, mExtEndI = -1;
-      if (mExtEnd && mTEnd && mExtEnd > mTEnd) {
-        for (var me2 = 0; me2 < 12; me2++) {
-          var ms2 = new Date(ganttYear, me2, 1); var me2e = new Date(ganttYear, me2 + 1, 0, 23, 59, 59, 999);
-          // Prolongation à partir du mois suivant la fin (évite le chevauchement)
-          if (ms2 > mTEnd && mExtEnd >= ms2) { if (mExtStart === -1) mExtStart = me2; mExtEndI = me2; }
-        }
-      }
+      var mExtGeom = (mExtEnd && mTEnd && mExtEnd > mTEnd) ? ganttBarGeom(mTEnd, mExtEnd, months, monthColW) : null;
       var mExtColor = getExtensionBarColor(task);
 
       for (var m = 0; m < 12; m++) {
         var isTodayMonth = (ganttYear === todayYear && m === todayMonth);
-        html += '<td class="gantt-cell" style="position:relative;min-width:80px;">';
+        html += '<td class="gantt-cell' + (isTodayMonth ? ' today-col' : '') + '" style="position:relative;min-width:' + monthColW + 'px;">';
         if (isTodayMonth && todayDayPct >= 0) {
           html += '<div style="position:absolute;top:0;bottom:0;left:' + todayDayPct + '%;width:2px;background:#ef4444;z-index:1;pointer-events:none;"></div>';
         }
-        if (m === mBarStartIdx) {
-          var mBarWidth = (mBarEndIdx - mBarStartIdx + 1) * 80;
-          html += '<div class="gantt-bar ' + barClass + '" style="left:2px;width:' + mBarWidth + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
+        if (mGeom && m === mGeom.idx) {
+          html += '<div class="gantt-bar ' + barClass + '" style="left:' + mGeom.left + 'px;width:' + mGeom.width + 'px;cursor:pointer;' + barCustomStyle + '" title="' + sanitize(task.Title) + '" onclick="openEditTaskModal(' + task.id + ')">' + sanitize(task.Title) + '</div>';
         }
-        if (m === mExtStart && mExtStart >= 0) {
-          var mExtW = (mExtEndI - mExtStart + 1) * 80;
-          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:2px;width:' + mExtW + 'px;border-color:' + mExtColor + ';background:' + mExtColor + '20;"></div>';
+        if (mExtGeom && m === mExtGeom.idx) {
+          html += '<div class="gantt-bar-extension" title="' + t('extensionTooltip') + ' — ' + sanitize(task.Title) + '" style="left:' + mExtGeom.left + 'px;width:' + mExtGeom.width + 'px;border-color:' + mExtColor + ';background:' + mExtColor + '20;"></div>';
         }
         html += '</td>';
       }
       html += '</tr>';
 
-      // === Lignes sous-tâches (mode Mois) ===
+      // === Lignes sous-taches (mode Mois) ===
       if (expandedGanttTasks[task.id]) {
         var sts = getGanttSubtasks(task.id);
         for (var sti = 0; sti < sts.length; sti++) {
           var st = sts[sti];
           var stRange = getGanttSubtaskRange(st, task);
           var stBarClass = ganttSubtaskBarClass(st, task);
+          var stGeom = ganttBarGeom(stRange.start, stRange.end, months, monthColW);
           html += '<tr class="gantt-subtask-row">' + renderGanttSubtaskLabelCell(st, task.id);
-          var stStartM = -1, stEndM = -1;
-          for (var m2 = 0; m2 < 12; m2++) {
-            var mStart = new Date(ganttYear, m2, 1);
-            var mEnd = new Date(ganttYear, m2 + 1, 0, 23, 59, 59, 999);
-            if (stRange.start <= mEnd && stRange.end >= mStart) {
-              if (stStartM === -1) stStartM = m2;
-              stEndM = m2;
-            }
-          }
           for (var m2 = 0; m2 < 12; m2++) {
             var isTodayMonth2 = (ganttYear === todayYear && m2 === todayMonth);
-            html += '<td class="gantt-cell" style="position:relative;min-width:80px;">';
+            html += '<td class="gantt-cell' + (isTodayMonth2 ? ' today-col' : '') + '" style="position:relative;min-width:' + monthColW + 'px;">';
             if (isTodayMonth2 && todayDayPct >= 0) {
               html += '<div style="position:absolute;top:0;bottom:0;left:' + todayDayPct + '%;width:2px;background:#ef4444;z-index:1;pointer-events:none;"></div>';
             }
-            if (m2 === stStartM) {
-              var stBarW = (stEndM - stStartM + 1) * 80;
-              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:2px;width:' + stBarW + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
+            if (stGeom && m2 === stGeom.idx) {
+              html += '<div class="gantt-bar gantt-bar-subtask ' + stBarClass + '" style="left:' + stGeom.left + 'px;width:' + stGeom.width + 'px;cursor:pointer;" title="' + sanitize(st.Title) + '" onclick="openEditTaskModal(' + task.id + ')"></div>';
             }
             html += '</td>';
           }
@@ -4993,7 +5081,7 @@ function renderGanttView() {
     var dd = days[di];
     var isToday = dd.getTime() === today.getTime();
     var isWeekend = dd.getDay() === 0 || dd.getDay() === 6;
-    html += '<th class="' + (isToday ? 'today' : '') + (isWeekend ? ' weekend' : '') + '">';
+    html += '<th' + (isToday ? ' id="gantt-today-col"' : '') + ' class="' + (isToday ? 'today' : '') + (isWeekend ? ' weekend' : '') + '">';
     html += '<div>' + dd.getDate() + '</div>';
     html += '<div style="font-size:8px;">' + dayNames[dd.getDay()] + '</div>';
     html += '</th>';
@@ -5117,6 +5205,7 @@ function renderGanttView() {
 function initGanttDragScroll() {
   var container = document.querySelector('#gantt-view .gantt-container');
   if (!container) return;
+  ganttAfterRender();
   var isDown = false;
   var startX, scrollLeft, hasMoved;
 
@@ -5184,6 +5273,7 @@ function ganttNav(dir) {
 function ganttToday() {
   ganttYear = new Date().getFullYear();
   ganttMonth = new Date().getMonth();
+  ganttPendingCenter = true;   // C1 : recentrer sur le jour courant
   renderGanttView();
 }
 
@@ -5200,6 +5290,7 @@ function ganttCollapseAll() {
 
 function setGanttMode(mode) {
   ganttMode = mode;
+  ganttPendingCenter = true;   // C1 : chaque changement d'echelle recentre sur aujourd'hui
   // A3 : afficher la zone de dates uniquement en mode personnalisé
   var rangeBox = document.getElementById('gantt-custom-range');
   if (rangeBox) rangeBox.style.display = (mode === 'custom') ? 'flex' : 'none';
@@ -5268,6 +5359,7 @@ function toggleGanttFullscreen() {
   if (!el) return;
   var on = el.classList.toggle('gantt-fullscreen');
   if (btn) btn.title = on ? (currentLang === 'fr' ? 'Quitter le plein écran' : 'Exit fullscreen') : (currentLang === 'fr' ? 'Plein écran' : 'Fullscreen');
+  renderGanttView();   // la largeur disponible change : recalcul des colonnes
 }
 
 // =============================================================================
@@ -6191,7 +6283,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
     html += renderRaciChips('editAssignees');
     html += '</div>';
     html += '<div class="assignee-add-row">';
-    html += '<select id="assignee-select">';
+    html += '<select id="assignee-select" onchange="addRaciChip(\'editAssignees\',\'assignee\')">';
     html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
     for (var i = 0; i < users.length; i++) {
       html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
@@ -6484,7 +6576,7 @@ function openEditTaskModal(taskId, preserveAssignees) {
   
   // Add dependency
   html += '<div class="dep-add-row">';
-  html += '<select id="dep-select">';
+  html += '<select id="dep-select" onchange="if (this.value) addDependency(' + task.id + ')">';
   html += '<option value="">-- ' + t('selectTask') + ' --</option>';
   var availableTasks = getFilteredTasks().filter(function(t) {
     return t.id !== task.id && !taskDeps.some(function(d) { return d.id === t.id; });
@@ -6759,7 +6851,7 @@ function renderRaciField(letter, label, selectSuffix, varName) {
   html += renderRaciChips(varName);
   html += '</div>';
   html += '<div class="assignee-add-row">';
-  html += '<select id="' + selectSuffix + '-select">';
+  html += '<select id="' + selectSuffix + '-select" onchange="addRaciChip(\'' + varName + '\',\'' + selectSuffix + '\')">';
   html += '<option value="">-- ' + t('searchAssignee') + ' --</option>';
   for (var i = 0; i < users.length; i++) {
     html += '<option value="' + sanitize(users[i].Email || users[i].Name) + '">' + sanitize(users[i].Name || users[i].Email) + '</option>';
@@ -6846,7 +6938,16 @@ async function updateSubtaskDep(subtaskId, taskId) {
 async function quickAction(taskId, newStatus) {
   var task = tasks.find(function(t) { return t.id === taskId; });
   var wasNotDone = task && task.Status !== 'done';
-  
+
+  // A2 : le blocage par dependance s'applique aussi aux actions rapides
+  // (c'etait le seul chemin qui permettait de contourner "bloquee par").
+  if (newStatus === 'done' && isTaskBlocked(taskId)) {
+    var qaBlockers = getTaskDependencies(taskId).filter(function(b) { return b && b.Status !== 'done'; });
+    var qaNames = qaBlockers.map(function(b) { return b.Title; }).join(', ');
+    showToast((currentLang === 'fr' ? 'Impossible : tache bloquee par ' : 'Cannot complete: blocked by ') + qaNames, 'error');
+    return;
+  }
+
   try {
     await grist.docApi.applyUserActions([
       ['UpdateRecord', TASKS_TABLE, taskId, { Status: newStatus }]
@@ -7194,6 +7295,8 @@ async function addDependency(taskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1 : fige la saisie en cours avant de rouvrir la modale
 
   try {
     await grist.docApi.applyUserActions([
@@ -7210,6 +7313,7 @@ async function addDependency(taskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);   // A3 : on reste ou on etait dans la modale
   } catch (e) {
     console.error('Error adding dependency:', e);
     showToast('Error: ' + e.message, 'error');
@@ -7225,6 +7329,8 @@ async function removeDependency(taskId, dependsOnTaskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1
 
   try {
     await grist.docApi.applyUserActions([
@@ -7237,6 +7343,7 @@ async function removeDependency(taskId, dependsOnTaskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);   // A3
   } catch (e) {
     console.error('Error removing dependency:', e);
   }
@@ -7254,6 +7361,8 @@ async function addComment(taskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1
 
   try {
     await grist.docApi.applyUserActions([
@@ -7274,6 +7383,7 @@ async function addComment(taskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);   // A3
   } catch (e) {
     console.error('Error adding comment:', e);
     showToast('Error: ' + e.message, 'error');
@@ -7286,6 +7396,8 @@ async function deleteComment(commentId, taskId) {
   var savedAccountable = editAccountable.slice();
   var savedConsulted = editConsulted.slice();
   var savedInformed = editInformed.slice();
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1
   try {
     await grist.docApi.applyUserActions([
       ['RemoveRecord', COMMENTS_TABLE, commentId]
@@ -7297,6 +7409,7 @@ async function deleteComment(commentId, taskId) {
     editConsulted = savedConsulted;
     editInformed = savedInformed;
     openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);   // A3
   } catch (e) {
     console.error('Error deleting comment:', e);
   }
@@ -7306,9 +7419,13 @@ async function deleteComment(commentId, taskId) {
 // TIME TRACKING
 // =============================================================================
 
-function startTimer(taskId) {
+async function startTimer(taskId) {
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1 : ne pas perdre la saisie en cours
   activeTimers[taskId] = Math.floor(Date.now() / 1000);
-  openEditTaskModal(taskId);
+  await loadAllData();
+  openEditTaskModal(taskId, true);
+  restoreModalScrollTop(scrollPos);      // A3
 }
 
 async function stopTimer(taskId) {
@@ -7317,7 +7434,9 @@ async function stopTimer(taskId) {
   var startTime = activeTimers[taskId];
   var endTime = Math.floor(Date.now() / 1000);
   var duration = endTime - startTime;
-  
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1
+
   try {
     await grist.docApi.applyUserActions([
       ['AddRecord', TIME_ENTRIES_TABLE, null, {
@@ -7332,7 +7451,8 @@ async function stopTimer(taskId) {
     delete activeTimers[taskId];
     showToast(t('timeEntryAdded'), 'success');
     await loadAllData();
-    openEditTaskModal(taskId);
+    openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);    // A3
   } catch (e) {
     console.error('Error stopping timer:', e);
     showToast('Error: ' + e.message, 'error');
@@ -7348,6 +7468,8 @@ async function addManualTimeEntry(taskId) {
     return;
   }
   var now = Math.floor(Date.now() / 1000);
+  var scrollPos = getModalScrollTop();
+  await persistTaskFormFields(taskId);   // A1
   try {
     await grist.docApi.applyUserActions([
       ['AddRecord', TIME_ENTRIES_TABLE, null, {
@@ -7361,7 +7483,8 @@ async function addManualTimeEntry(taskId) {
     ]);
     showToast(t('timeEntryAdded'), 'success');
     await loadAllData();
-    openEditTaskModal(taskId);
+    openEditTaskModal(taskId, true);
+    restoreModalScrollTop(scrollPos);    // A3
   } catch (e) {
     console.error('Error adding manual time entry:', e);
     showToast('Error: ' + e.message, 'error');
@@ -10608,8 +10731,10 @@ if (!isInsideGrist()) {
     await checkTimeBasedAutomations();
     await cleanupOldNotifications();
     updateNotificationBadge();
+    await resolveDocKey();            // B1 : filtres cloisonnes par document
     restoreFilters(); // conserver les filtres en changeant de page / au rechargement
-    try { var _sp = localStorage.getItem('pm-current-project'); if (_sp) currentProjectId = parseInt(_sp) || null; } catch (e) {}
+    renderProjectSelector();
+    refreshAllViews();
     restoreActiveTab();
     // Synchronise les choix de la colonne Status des sous-tâches avec les statuts personnalisés
     if (isOwner) syncSubtaskStatusChoices();
